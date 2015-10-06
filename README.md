@@ -72,5 +72,4 @@ TODO :
 - Finish the "Start shape"
 - Add undo
 - Add an empty to the target object to control all the lights
-- 
 
