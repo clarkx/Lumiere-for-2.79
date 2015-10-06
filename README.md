@@ -69,6 +69,7 @@ Use the **Quadratic**, **Linear** or **Constant** falloff
 
 TODO :
 ======
+- Add BGL
 - Finish the "Star shape"
 - Add a "Grid shape"
 - Add undo
