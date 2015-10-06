@@ -1,5 +1,5 @@
 # Lumiere
-****
+
 ## Interactive Lightning add-on for Blender 
 (Preview : https://www.youtube.com/watch?v=ZF3Xf5lxZOk&list=PLG2jIUa3pBt5XRYJjSi6UA5PWUitH2Rud)
 ****
@@ -14,6 +14,14 @@ Select the type of your light. Click on "Add Light".
 
 In the first 3dView, use "CTRL + Left Click" on your object to add your light. You are in interactive mode. To release the light use "Right Click" or "Escape". The light will be automatically parented to your object.
 
+#### Target :
+Allow you to control the light only with this object
+
+#### Smooth :
+Soften the light falloff
+
+#### Light Falloff :
+Use the **Quadratic**, **Linear** or **Constant** falloff
 
 ### Controls :
 >By default :
@@ -25,6 +33,12 @@ In the first 3dView, use "CTRL + Left Click" on your object to add your light. Y
 **"ALT + Mouse move"** : Range of the light from your model
 
 **"Left Shift + Mouse move"** : Energy of the light
+
+**"N"** : Alternate the angle from the view to the normal (try on a plane object to see the difference)
+
+**"I"** : Alternate the light to the front to the back of the object ('Invert' the light angle)
+
+**"F"** : Alternate the falloff types : *Quadratic*, *Linear*, *Constant*
 
 #### Blender light : 
 > (**"HEMI"** is not supported)
@@ -55,5 +69,8 @@ In the first 3dView, use "CTRL + Left Click" on your object to add your light. Y
 
 TODO :
 ======
-
+- Finish the "Start shape"
+- Add undo
+- Add an empty to the target object to control all the lights
+- 
 
