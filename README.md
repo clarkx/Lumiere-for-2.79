@@ -10,6 +10,8 @@ Use blender light, panel light, HDRI, background sky or draw your own light with
 Add gradient texture to mimic professional light panel or use real HDRI.
 
 ### Create a new light :
+> **Warning** : You have to apply the transform rotation and scale ("CTRL+A") for the moment, it's a todo.
+
 Select the type of your light. Click on "Add Light". 
 
 In the first 3dView, use "CTRL + Left Click" on your object to add your light. You are in interactive mode. To release the light use "Right Click" or "Escape". The light will be automatically parented to your object.
@@ -69,9 +71,10 @@ Use the **Quadratic**, **Linear** or **Constant** falloff
 
 TODO :
 ======
-- Add BGL
+- ~~Add BGL~~ 
 - Finish the "Star shape"
 - Add a "Grid shape"
 - Add undo
 - Add an empty to the target object to control all the lights
+- Remove the apply transform (CTRL+A)
 
