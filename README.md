@@ -73,7 +73,7 @@ TODO :
 ======
 - ~~Add BGL~~ 
 - Finish the "Star shape"
-- Add a "Grid shape"
+- ~~Add a "Grid shape"~~
 - Add undo
 - Add an empty to the target object to control all the lights
 - Remove the apply transform (CTRL+A)
