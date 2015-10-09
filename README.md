@@ -77,4 +77,5 @@ TODO :
 - Add undo
 - Add an empty to the target object to control all the lights
 - Remove the apply transform (CTRL+A)
+- Add interpolation
 
