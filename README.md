@@ -69,6 +69,26 @@ Use the **Quadratic**, **Linear** or **Constant** falloff
 
 **"-"** : Delete a color stop to the coloramp
 
+#### Gid shape :
+
+**"Z"** : scale the row on the Y axis
+
+**"SHIFT + Z"** : scale the gap between the rows on the Y axis
+
+**"S"** : scale the light on the XY axis
+
+**"X"** : scale the column on the X axis
+
+**"SHIFT + X"** : scale the gap between the columns on the X axis
+
+**"UP Arrow"** : Add a row to the grid
+
+**"DOWN Arrow"** : Delete a row to the grid
+
+**"RIGHT Arrow"** : Add a column to the grid
+
+**"LEFT Arrow"** : Delete a column to the grid
+
 TODO :
 ======
 - ~~Add BGL~~ 
