@@ -98,6 +98,6 @@ TODO :
 - Add an empty to the target object to control all the lights
 - Remove the apply transform (CTRL+A)
 - ~~Add interpolation~~
-- Add list of lights
-- Add mute all lights but active one
+- ~~Add list of lights~~
+- ~~Add mute all lights but active one~~
 
