@@ -92,7 +92,7 @@ Use the **Quadratic**, **Linear** or **Constant** falloff
 TODO :
 ======
 - ~~Add BGL~~ 
-- Finish the "Star shape"
+- ~~Finish the "Star shape"~~
 - ~~Add a "Grid shape"~~
 - Add undo
 - Add an empty to the target object to control all the lights
