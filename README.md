@@ -5,22 +5,21 @@
 ****
 Control and positioned your light with the mouse directly on your model. Adjust the energy and scale interactively.
 
-Use blender light, panel light, HDRI, background sky or draw your own light with the grease pencil. 
+Use internal blender lamp, panel light, HDRI, background sky. 
 
-Add gradient texture to mimic professional light panel or use real HDRI.
+Add gradient texture to mimic professional light panel, soft box or use real HDRI.
 
 ### Create a new light :
-> **Warning** : You have to apply the transform rotation and scale ("CTRL+A") for the moment, it's a todo.
-
 Select the type of your light. Click on "Add Light". 
 
 In the first 3dView, use "CTRL + Left Click" on your object to add your light. You are in interactive mode. To release the light use "Right Click" or "Escape". The light will be automatically parented to your object.
 
 #### Target :
 Allow you to control the light only with this object
+![target](https://cloud.githubusercontent.com/assets/10100090/12847216/f8b8708c-cc11-11e5-9eef-ffd09ea77705.gif)
 
 #### Smooth :
-Soften the light falloff
+Soften the light falloff 
 
 #### Light Falloff :
 Use the **Quadratic**, **Linear** or **Constant** falloff
@@ -63,7 +62,6 @@ Use the **Quadratic**, **Linear** or **Constant** falloff
 **"DOWN Arrow"** : Delete a side to the shape
 
 #### Gradient :
-> **Warning** : You have to select the index (the number on the the left of the list) before changing the value or the color.
 
 **"+"** : Add a color stop to the coloramp
 
@@ -88,16 +86,4 @@ Use the **Quadratic**, **Linear** or **Constant** falloff
 **"RIGHT Arrow"** : Add a column to the grid
 
 **"LEFT Arrow"** : Delete a column to the grid
-
-TODO :
-======
-- ~~Add BGL~~ 
-- ~~Finish the "Star shape"~~
-- ~~Add a "Grid shape"~~
-- Add undo
-- Add an empty to the target object to control all the lights
-- ~~Remove the apply transform (CTRL+A)~~
-- ~~Add interpolation~~
-- ~~Add list of lights~~
-- ~~Add mute all lights but active one~~
 
