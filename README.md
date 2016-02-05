@@ -17,6 +17,7 @@ In the first 3dView, use "CTRL + Left Click" on your object to add your light. Y
 #### Interactive mode : ![interactive_mode](https://cloud.githubusercontent.com/assets/10100090/12847889/c100eac0-cc16-11e5-8b45-62334a23d06f.png)
 
 **"Left mouse button"** : Align the light with the refection or the normal of the target object (see **"N"** option).
+![interactive mode](https://cloud.githubusercontent.com/assets/10100090/12848961/2846ade0-cc1d-11e5-9f37-ee2158d678ae.gif)
 
 **"ALT + Mouse move"** : Range of the light from your model
 
