@@ -45,6 +45,7 @@ Soften the light falloff
 > (**"HEMI"** is not supported)
 
 "Point", "Sun": **"S"** to change the softness of the shadow 
+
 "Spot" : **"S"** to change the softness of the shadow // **"Z"** : Change the spot blend // **"X"** : Change the spot size
 ![spot_lamp](https://cloud.githubusercontent.com/assets/10100090/12847150/8661f8e6-cc11-11e5-958c-c747f5d324f5.gif)
 
