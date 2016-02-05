@@ -27,6 +27,8 @@ In the first 3dView, use "CTRL + Left Click" on your object to add your light. Y
 
 **"F"** : Alternate the falloff types : *Quadratic*, *Linear*, *Constant*
 
+**"R"** : Rotate the light on the Z axis
+
 **"G"** : Grab the light and orbit around the target point :
 ![grab](https://cloud.githubusercontent.com/assets/10100090/12847098/44bc2d3a-cc11-11e5-90bc-1ebc247e200c.gif)
 
