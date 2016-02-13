@@ -20,7 +20,7 @@
 
 bl_info = {
     "name": "Lumiere",
-    "author": "Cédric Brandin",
+    "author": "Cédric Brandin, Nathan Craddock",
     "version": (0, 0, 50),
     "blender": (2, 76, 3),
     "location": "",
@@ -1904,7 +1904,7 @@ class PreSelAddonPreferences(bpy.types.Panel):
 
                                         #---Template Color Ramp
                                         #---Accesses the color ramp from the material
-                                        colramp = cobj.data.materials['Mat_' + cobj.name].node_tree.nodes['ColorRamp']
+                                        colramp = cobj.data.materials['Mat_' + cobj.data.name].node_tree.nodes['ColorRamp']
                                         box.template_color_ramp(colramp, "color_ramp", expand=True)
                                        
                                 col = box.column(align=True)
