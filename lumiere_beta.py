@@ -20,7 +20,7 @@
 
 bl_info = {
     "name": "Lumiere",
-    "author": "Cédric Brandin",
+    "author": "Cédric Brandin, Nathan Craddock",
     "version": (0, 0, 50),
     "blender": (2, 76, 3),
     "location": "",
@@ -1473,71 +1473,8 @@ class Group(PropertyGroup):
     coll = CollectionProperty(type=Entry)
     index = IntProperty()
 
-class SCENE_UL_list(UIList):
-    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-
-        if self.layout_type in {'DEFAULT', 'COMPACT'}:
-            layout.label(icon='BORDER_RECT')
-            layout.prop(item, "pos", text="", emboss=False, translate=True)
-            layout.prop(item, "col", text="")             
-        elif self.layout_type in {'GRID'}:
-            layout.alignment = 'CENTER'
-            layout.label(text="", icon_value=icon)
-
-# ui list item actions
-class Uilist_actions(bpy.types.Operator):
-    bl_idname = "custom.list_action"
-    bl_label = "List Action"
-
-    action = bpy.props.EnumProperty(
-            items=(
-            ('REMOVE', "Remove", ""),
-            ('ADD', "Add", ""),
-            ))
-
-    act_light = bpy.props.StringProperty()
-
-    def invoke(self, context, event):
-        if self.act_light != "" : context.scene.objects.active = bpy.data.objects[self.act_light] 
-        cobj = context.active_object
-        idx = cobj.prop_group.index
-        mat_name, mat = get_mat_name(cobj.data.name)
-
-        if context.active_object.typlight not in ("Panel", "Pencil"):
-            mat = context.active_object.data
-        colramp = mat.node_tree.nodes['ColorRamp'].color_ramp
-        tmp_col = FloatVectorProperty(name="", min= 0, max= 1, subtype = "COLOR", size = 4)
-        
-        try:
-            item = cobj.prop_group.index
-        except IndexError:
-            pass
-
-        else:
-            if self.action == 'REMOVE' and cobj.prop_group.index > 0:
-                cobj.prop_group.coll.remove(idx)
-                colramp.elements.remove(colramp.elements[idx])
-                cobj.prop_group.index -= 1
-
-            #---Hack to update the node...
-                colramp.elements[0].position -= 0.0001
-                bpy.ops.object.list_populate()
-
-        if self.action == 'ADD':
-        #---Save color and position of the selected element            
-            i = cobj.prop_group.index
-            tmp_pos = colramp.elements[i].position 
-                     
-        #---Add a new color stop in the ColorRamp node
-            colramp.elements.new(tmp_pos/2)
-            cobj.prop_group.index += 1
-
-            bpy.ops.object.list_populate()
-
-        return {"FINISHED"}
-
-class SCENE_OT_list_populate(Operator):
-    bl_idname = "object.list_populate"
+class SCENE_OT_add_gradient(Operator):
+    bl_idname = "object.add_gradient"
     bl_label = "Gradient"
     
     act_light = bpy.props.StringProperty()
@@ -1552,25 +1489,8 @@ class SCENE_OT_list_populate(Operator):
         cobj = context.active_object
         
         if bpy.data.objects[self.act_light].show == True:
-        #---Initialise the collection
-            context.active_object.prop_group.coll.clear()
+        #---Initialise the gradient
             context.active_object.gradient = True
-            
-        #---Get the material and the Color Ramp of the active object
-            mat_name, mat = get_mat_name(cobj.data.name)
-            
-            if context.active_object.typlight not in ("Panel", "Pencil"):
-                mat = context.active_object.data
-            colramp = mat.node_tree.nodes['ColorRamp'].color_ramp        
-
-        #---Fill the uilist with the ColorRamp
-            for i in range(len(colramp.elements)):
-                item = context.active_object.prop_group.coll.add()
-                context.active_object.prop_group.index = i
-                item.nbr = context.active_object.prop_group.index
-                item.pos = colramp.elements[i].position
-                colramp.elements[i].alpha = 1
-                item.col = colramp.elements[i].color[:]
         else:
             self.report({'INFO'}, 'The light must be in Show Mode')
         return {'FINISHED'}
@@ -1929,7 +1849,7 @@ class PreSelAddonPreferences(bpy.types.Panel):
                             else: 
                                 split.label(text="",icon='COLOR')
 
-                            if cobj.expanded :
+                            if cobj.expanded:
                                 row = box.row(align=True)
 
                             #---Search list for the target object
@@ -1972,28 +1892,20 @@ class PreSelAddonPreferences(bpy.types.Panel):
                                         row = col.row(align=True)
                                         if cobj.expanded and cobj.show == False:
                                             row.alert = True
-                                        row.operator("object.list_populate", icon='BLANK1').act_light = cobj.name
+                                        row.operator("object.add_gradient", icon='BLANK1').act_light = cobj.name
                                         row.alert = False
                                     else:
                                         col = box.column(align=True)
                                         row = col.row(align=True)
                                         row.prop(cobj, "gradient", text='Gradient type :', icon='BLANK1')
-                                        row = col.row(align=True)
+                                        row = box.row(align=True)
                                         
                                         if cobj.typlight in ("Panel", "Pencil"): row.prop(cobj, "typgradient", text="")
-                                        row.prop(cobj, "gradinterpo")
 
-                                        rows = 2
-                                        row = col.row(align=True)
-                                        row.template_list("SCENE_UL_list", "", cobj.prop_group, "coll", cobj.prop_group, "index", rows=rows)
-
-                                        col = row.column(align=True)
-                                        op = col.operator("custom.list_action", icon='ZOOMIN', text="")
-                                        op.action = 'ADD'
-                                        op.act_light = cobj.name
-                                        op = col.operator("custom.list_action", icon='ZOOMOUT', text="")
-                                        op.action = 'REMOVE'
-                                        op.act_light = cobj.name
+                                        #---Template Color Ramp
+                                        #---Accesses the color ramp from the material
+                                        colramp = cobj.data.materials['Mat_' + cobj.data.name].node_tree.nodes['ColorRamp']
+                                        box.template_color_ramp(colramp, "color_ramp", expand=True)
                                        
                                 col = box.column(align=True)
                                 row = col.row(align=True)
@@ -2004,7 +1916,8 @@ class PreSelAddonPreferences(bpy.types.Panel):
                                             row.prop(cobj, "filepath")
                                         else:
                                             row.prop(cobj, "unlink", icon='ZOOMOUT')
-                                            row.prop(cobj, "filepath")                                      
+                                            row.prop(cobj, "filepath")
+
 
 
 #########################################################################################################
