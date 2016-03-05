@@ -245,7 +245,13 @@ def draw_callback_px(self, context):
 					blf.draw(font_id, "Constant Falloff")
 			else:
 				self.falloff_mode == False
-			
+		
+		elif self.scale_mode:
+			 scale_degree = (self.scale_after * 100) / self.scale_before
+			 blf.draw(font_id, "Scale: " + str(round(scale_degree,2)))
+
+
+				
 #---Restore opengl defaults
 	bgl.glLineWidth(1)
 	bgl.glDisable(bgl.GL_BLEND)
@@ -1057,17 +1063,21 @@ class AddLight(bpy.types.Operator):
 				#---Scale on X and Y axis
 					elif self.scale_light:
 						self.modif = True
+						self.scale_mode = True
 						delta = event.mouse_x - self.first_mouse_x
 						
 						if obj_light.typlight in ("Panel", "Pencil"):
 							obj_light.scale[0] += delta*.1
 							obj_light.scale[1] += delta*.1
+							self.scale_after = obj_light.scale[0]
 						elif obj_light.typlight in ("Point", "Sun", "Spot") :
 							lamp = obj_light.data
 							lamp.shadow_soft_size += delta * .05
+							self.scale_after = lamp.shadow_soft_size
 						elif obj_light.typlight =="Sky" :
 							lamp = obj_light.data
 							lamp.shadow_soft_size += delta * .002
+							self.scale_after = lamp.shadow_soft_size
 						#---Stick to the maximum of turbidity in the Sky texture
 							if lamp.shadow_soft_size > 0.1:
 								lamp.shadow_soft_size = 0.1
@@ -1075,43 +1085,53 @@ class AddLight(bpy.types.Operator):
 						elif obj_light.typlight == "Area":
 							lamp = obj_light.data
 							lamp.size += delta * .05
-							lamp.size_y += delta * .05					   
-								
+							lamp.size_y += delta * .05
+							self.scale_after = lamp.size
 						self.scale_light = False
 
 				#---Scale on X - Only for panel type
 					elif self.scale_light_x:
 						self.modif = True
+						self.scale_mode = True
 						delta = event.mouse_x - self.first_mouse_x
 						if obj_light.typlight == "Panel":
 							if obj_light.shape == "Star": 
 								obj_light.xtrnrad += delta*.1
+								self.scale_after = obj_light.xtrnrad
 							else:
 								obj_light.scale[0] += delta*.1
+								self.scale_after = obj_light.scale[0]
 						elif obj_light.typlight == "Area":
 							lamp = obj_light.data
 							lamp.size += delta * .05
+							self.scale_after = lamp.size
 						elif obj_light.typlight == "Spot" :
 							lamp = obj_light.data
-							lamp.spot_size += delta * .05						 
+							lamp.spot_size += delta * .05
+							self.scale_after = lamp.spot_size
 							
 						self.scale_light_x = False
 						
 				#---Scale on Y - Only for panel type
 					elif self.scale_light_y:
 						self.modif = True
+						self.scale_mode = True
 						delta = event.mouse_x - self.first_mouse_x
 						if obj_light.typlight == "Panel":
 							if obj_light.shape == "Star": 
 								obj_light.itrnrad += delta*.1
+								self.scale_after = obj_light.itrnrad
 							else:
 							   obj_light.scale[1] += delta*.1
+							   self.scale_after = obj_light.scale[1]
 						elif obj_light.typlight == "Area":
 							lamp = obj_light.data
 							lamp.size_y += delta * .05
+							elf.scale_after = lamp.size_y 
 						elif obj_light.typlight == "Spot" :
 							lamp = obj_light.data
-							lamp.spot_blend += delta * .05							
+							lamp.spot_blend += delta * .05	
+							elf.scale_after = lamp.spot_blend 					
 							
 						self.scale_light_y = False
 												
@@ -1199,16 +1219,55 @@ class AddLight(bpy.types.Operator):
 			elif event.type == context.scene.Key_Scale :
 				self.first_mouse_x = event.mouse_x
 				self.scale_light = True
+			#---HUD 
+				if obj_light.typlight in ("Panel", "Pencil"):
+					if self.scale_before == 0 : self.scale_before = obj_light.scale[0]
+				elif obj_light.typlight in ("Point", "Sun", "Spot") :
+					lamp = obj_light.data
+					if self.scale_before == 0 : self.scale_before = lamp.shadow_soft_size 
+				elif obj_light.typlight =="Sky" :
+					lamp = obj_light.data
+					if self.scale_before == 0 : self.scale_before = lamp.shadow_soft_size
+					if lamp.shadow_soft_size > 0.1:
+						lamp.shadow_soft_size = 0.1
+				elif obj_light.typlight == "Area":
+					lamp = obj_light.data
+					if self.scale_before == 0 : self.scale_before = lamp.size				
 
 		#---Scale the light on X axis
 			elif event.type == context.scene.Key_Scale_X:
 				self.first_mouse_x = event.mouse_x
 				self.scale_light_x = True
+			#---HUD
+				if obj_light.typlight == "Panel":
+					if obj_light.shape == "Star": 
+						if self.scale_before == 0 : self.scale_before = obj_light.xtrnrad
+					else:
+						if self.scale_before == 0 : self.scale_before = obj_light.scale[0]
+				elif obj_light.typlight == "Area":
+					lamp = obj_light.data
+					if self.scale_before == 0 : self.scale_before = lamp.size
+				elif obj_light.typlight == "Spot" :
+					lamp = obj_light.data
+					if self.scale_before == 0 : self.scale_before = lamp.spot_size
 
 		#---Scale the light on Y axis
 			elif event.type == context.scene.Key_Scale_Y:
 				self.first_mouse_x = event.mouse_x
 				self.scale_light_y = True
+			#---HUD
+				if obj_light.typlight == "Panel":
+					if obj_light.shape == "Star": 
+						if self.scale_before == 0 : self.scale_before = obj_light.itrnrad
+					else:
+						if self.scale_before == 0 : self.scale_before = obj_light.scale[1]
+				elif obj_light.typlight == "Area":
+					lamp = obj_light.data
+					if self.scale_before == 0 : self.scale_before = lamp.size_y
+				elif obj_light.typlight == "Spot" :
+					lamp = obj_light.data
+					if self.scale_before == 0 : self.scale_before = lamp.spot_blend
+
 				
 		#---Orbit mode
 			elif event.type == context.scene.Key_Orbit:
@@ -1281,6 +1340,8 @@ class AddLight(bpy.types.Operator):
 			self.orbit = False
 			self.orbit_mode = False
 			self.strength_mode = False
+			self.scale_mode = False
+			self.scale_before = 0
 			
 	def check_region(self,context,event):
 		if context.area != None:
@@ -1344,6 +1405,7 @@ class AddLight(bpy.types.Operator):
 						self.strength_light = False
 						self.rotate_light_z = False
 						self.orbit = False
+						self.scale_before = self.scale_after = 0
 
 					#---Define the different shape for the panel light
 						if context.scene.typlight == "Panel":
@@ -1462,7 +1524,13 @@ class AddLight(bpy.types.Operator):
 			self.dist_light = False
 			self.strength_light = False
 			self.strength_mode = False
+			self.scale_mode = False
 			self.rotate_light_z = False
+			self.scale_light = False
+			self.scale_light_x = False
+			self.scale_light_y = False
+			
+			
 			
 			if obj_light is not None and obj_light.type != 'EMPTY' and obj_light.data.name.startswith("Lumiere") and self.editmode:
 				for ob in context.scene.objects:
