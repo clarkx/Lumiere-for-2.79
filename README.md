@@ -8,7 +8,7 @@ Changelog :
 Ver 0.60 :
 - New custom light button:
   - Create you shape facing the z-axis and use the new "Create light" button
-  - Example : http://www.youtube.com/edit?video_id=2c62-X2ugMs
+  - Example : https://www.youtube.com/watch?v=2c62-X2ugMs
 
 ****
 Ver 0.55 :
