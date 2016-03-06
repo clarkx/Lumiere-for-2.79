@@ -21,7 +21,7 @@
 bl_info = {
 	"name": "Lumiere",
 	"author": "Cédric Brandin, Nathan Craddock",
-	"version": (0, 0, 55),
+	"version": (0, 0, 60),
 	"blender": (2, 76, 3),
 	"location": "",
 	"description": "Interactive Lighting Add-on",
@@ -865,6 +865,41 @@ def create_light_grid(self, context):
 #########################################################################################################
 
 #########################################################################################################
+def create_light_custom(self, context, obj_light):
+	i = 0
+
+	for ob in context.scene.objects:
+		if ob.type != 'EMPTY' and ob.data.name.startswith("Lumi"):
+			i += 1
+	
+	if not obj_light.data.name.startswith("Lumi"):
+		obj_light.data.name = "Lumiere." + str(i)
+
+#---Add the material
+	emit_plan_mat()
+	plan = obj_light
+	mat_name, mat = get_mat_name(plan.data.name)
+	plan.active_material = mat
+	add_gradient(self, context)
+	   
+#---Change the visibility 
+	cobj = bpy.context.object
+	cobj.draw_type = 'WIRE'
+	cobj.cycles_visibility.camera = False
+	cobj.cycles_visibility.shadow = False
+	
+#---Add 1 simple subsurf
+	cobj.modifiers.new("subd", type='SUBSURF')
+	cobj.modifiers["subd"].subdivision_type="SIMPLE"
+	bpy.ops.object.modifier_apply(modifier="subd")
+	cobj.typlight = context.scene.typlight
+	cobj.shape = "Custom"
+	cobj.energy = 10
+
+	
+#########################################################################################################
+
+#########################################################################################################
 def create_light_point():
 	i = 0
 	bpy.ops.object.lamp_add(type='POINT', view_align=False, location=(0,0,0))
@@ -1036,6 +1071,7 @@ class AddLight(bpy.types.Operator):
 	rotz = 0
 	create_light = False
 	editmode = bpy.props.BoolProperty(default=False)
+	custom = bpy.props.BoolProperty()
 	act_light = bpy.props.StringProperty()
 	#-------------------------------------------------------------------
 	
@@ -1294,14 +1330,14 @@ class AddLight(bpy.types.Operator):
 				obj_light.typfalloff = str(fallidx)
 
 		#---Add a side.
-			elif event.type == 'PAGE_UP' and obj_light.typlight == "Panel":
+			elif event.type == 'PAGE_UP' and obj_light.typlight == "Panel" and obj_light.shape != "Custom":
 					if obj_light.shape == "Star":
 						obj_light.nbside += 2
 					else:
 						obj_light.nbside += 1 
 
 		#---Remove a side.
-			elif event.type == 'PAGE_DOWN' and obj_light.typlight == "Panel":
+			elif event.type == 'PAGE_DOWN' and obj_light.typlight == "Panel" and obj_light.shape != "Custom":
 					if obj_light.shape == "Star":
 						obj_light.nbside -= 2
 						if obj_light.nbside < 12: obj_light.nbside = 12
@@ -1310,20 +1346,20 @@ class AddLight(bpy.types.Operator):
 						if obj_light.nbside < 3: obj_light.nbside = 3
 
 		#---Add a row.
-			elif event.type == 'UP_ARROW' and obj_light.typlight == "Panel" and obj_light.shape != "Star":
+			elif event.type == 'UP_ARROW' and obj_light.typlight == "Panel" and obj_light.shape != "Star" and obj_light.shape != "Custom":
 				obj_light.nbrow += 1 
 
 		#---Remove a row.
-			elif event.type == 'DOWN_ARROW' and obj_light.typlight == "Panel" and obj_light.shape != "Star":
+			elif event.type == 'DOWN_ARROW' and obj_light.typlight == "Panel" and obj_light.shape != "Star" and obj_light.shape != "Custom":
 				 obj_light.nbrow -= 1 
 				 if obj_light.nbrow < 1: obj_light.nbrow = 1
 				
 		#---Add a column.
-			elif event.type == 'RIGHT_ARROW' and obj_light.typlight == "Panel" and obj_light.shape != "Star":
+			elif event.type == 'RIGHT_ARROW' and obj_light.typlight == "Panel" and obj_light.shape != "Star" and obj_light.shape != "Custom":
 				obj_light.nbcol += 1 
  
 		#---Remove a column.
-			elif event.type == 'LEFT_ARROW' and obj_light.typlight == "Panel" and obj_light.shape != "Star":
+			elif event.type == 'LEFT_ARROW' and obj_light.typlight == "Panel" and obj_light.shape != "Star" and obj_light.shape != "Custom":
 				obj_light.nbcol -= 1 
 				if obj_light.nbcol < 1: obj_light.nbcol = 1				  
 		
@@ -1393,7 +1429,7 @@ class AddLight(bpy.types.Operator):
 					self.create_light = True
 					
 			#---Create Lights	  
-				if (event.ctrl) and event.type == 'LEFTMOUSE' and not self.editmode:
+				if (event.ctrl) and event.type == 'LEFTMOUSE' and not self.editmode or self.custom:
 					if event.value == 'PRESS':
 						self.doPick = True
 						self.dist_light = False
@@ -1406,19 +1442,25 @@ class AddLight(bpy.types.Operator):
 						self.rotate_light_z = False
 						self.orbit = False
 						self.scale_before = self.scale_after = 0
+						
 
 					#---Define the different shape for the panel light
 						if context.scene.typlight == "Panel":
-							if context.scene.shape == "Star":
-								obj_light = create_light_star(self, context, 12, 1, 0.5)
-							elif context.scene.shape == "Rectangular" :
-								obj_light = create_light_circle(self, context, 4)
-								obj_light.nbside = 4
-								obj_light.nbrow = 1
-								obj_light.nbcol = 1
-							elif context.scene.shape == "Circle" :
-								obj_light = create_light_circle(self, context, 28)
-								obj_light.nbside = 28
+							if not self.custom: 
+								if context.scene.shape == "Star":
+									obj_light = create_light_star(self, context, 12, 1, 0.5)
+								elif context.scene.shape == "Rectangular" :
+									obj_light = create_light_circle(self, context, 4)
+									obj_light.nbside = 4
+									obj_light.nbrow = 1
+									obj_light.nbcol = 1
+								elif context.scene.shape == "Circle" :
+									obj_light = create_light_circle(self, context, 28)
+									obj_light.nbside = 28
+							else:
+								self.custom = False
+								obj_light = context.scene.objects.active
+								create_light_custom(self, context, obj_light)
 
 					#---Default lamp light
 						elif context.scene.typlight == "Point":
@@ -1511,7 +1553,7 @@ class AddLight(bpy.types.Operator):
 
 		if context.space_data.type == 'VIEW_3D':
 
-			if self.editmode:
+			if self.editmode or self.custom :
 				context.scene.objects.active = bpy.data.objects[self.act_light] 
 			obj_light = context.active_object
 		
@@ -1839,6 +1881,7 @@ bpy.types.Object.shape = EnumProperty(name="",
 						   ("Rectangular", "Rectangular shape", "", 1),
 						   ("Circle", "Circle shape", "", 2),
 						   ("Star", "Star shape", "", 3),
+						   ("Custom", "Custom shape", "", 4),
 						   ), 
 						   default="Rectangular")  
 
@@ -2029,7 +2072,11 @@ class LumierePreferences(bpy.types.Panel):
 		#---Remove the light and the empty target
 			if cobj is not None and cobj.type != 'EMPTY' and hasattr(cobj, "data") and cobj.data.name.startswith("Lumiere"):
 				op = row.operator("object.remove", text="Remove light", icon='BLANK1')
-				op.name = cobj.data.name   
+				op.name = cobj.data.name 
+			elif cobj is not None and cobj.type != 'EMPTY' and hasattr(cobj, "data"):
+				op = row.operator("object.add_light", text="Create light", icon='BLANK1')
+				op.act_light = cobj.name
+				op.custom = True
 
 			row = col.row(align=True)
 			row.prop(scene, "typlight")
