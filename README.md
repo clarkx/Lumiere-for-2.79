@@ -6,8 +6,9 @@ Wiki : https://github.com/clarkx/Lumiere/wiki
 Changelog :
 ****
 Ver 0.60 :
-- New custom light button.
+- New custom light button:
   - Create you shape facing the z-axis and use the new "Create light" button
+  - Example : https://www.youtube.com/edit?video_id=2c62-X2ugMs
 
 ****
 Ver 0.55 :
