@@ -979,7 +979,6 @@ def create_light_area():
 	cobj = bpy.context.object
 	cobj.data.cycles.use_multiple_importance_sampling = True
 	cobj.typlight = bpy.context.scene.typlight
-	
 #---Link Falloff
 	emit = cobj.data.node_tree.nodes["Emission"]
 	falloff = cobj.data.node_tree.nodes.new("ShaderNodeLightFalloff")
@@ -2191,11 +2190,12 @@ class LumierePreferences(bpy.types.Panel):
 										row.prop(cobj, "gradient", text='Gradient type :', icon='BLANK1')
 										row = box.row(align=True)
 										
-										if cobj.typlight in ("Panel", "Pencil"): row.prop(cobj, "typgradient", text="")
-
-										#---Template Color Ramp
-										#---Accesses the color ramp from the material
-										colramp = cobj.data.materials['Mat_' + cobj.data.name].node_tree.nodes['ColorRamp']
+										if cobj.typlight in ("Panel", "Pencil"): 
+											row.prop(cobj, "typgradient", text="")
+											colramp = cobj.data.materials['Mat_' + cobj.data.name].node_tree.nodes['ColorRamp']
+										else:
+											colramp = cobj.data.node_tree.nodes['ColorRamp']
+											
 										box.template_color_ramp(colramp, "color_ramp", expand=True)
 									   
 								col = box.column(align=True)
