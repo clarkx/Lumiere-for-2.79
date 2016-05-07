@@ -21,13 +21,13 @@
 bl_info = {
 	"name": "Lumiere",
 	"author": "Cédric Brandin, Nathan Craddock",
-	"version": (0, 0, 60),
+	"version": (0, 0, 65),
 	"blender": (2, 76, 3),
-	"location": "",
+	"location": "View3D",
 	"description": "Interactive Lighting Add-on",
-	"warning": "",
-	"wiki_url": "",
-	"tracker_url": "",
+	"warning": "Beta version",
+	"wiki_url": "https://github.com/clarkx/Lumiere/wiki",
+	"tracker_url": "https://github.com/clarkx/Lumiere/issues",
 	"category": "Render"}
 
 import bpy, bgl, os, blf
@@ -96,8 +96,8 @@ class LumierePrefs(bpy.types.AddonPreferences):
 
 	#Scale the light on X axis							   
 	bpy.types.Scene.Key_Scale_X = StringProperty(
-							   name="Scale Y",
-							   description="Scale the light on the Y axis",
+							   name="Scale X",
+							   description="Scale the light on the X axis",
 							   maxlen=1,
 							   default="X")
 
@@ -121,9 +121,9 @@ class LumierePrefs(bpy.types.AddonPreferences):
 	#Energy of the light
 	bpy.types.Scene.Key_Strength = StringProperty(
 								name="Energy", 
-							    description="Energy of the light",
+								description="Energy of the light",
 								maxlen=1,
-							    default="E")
+								default="E")
 
 	#Grid Gap 
 	bpy.types.Scene.Key_Gap = EnumProperty(name="Grid Gap", 
@@ -135,7 +135,6 @@ class LumierePrefs(bpy.types.AddonPreferences):
 								),
 							   default="shift")	
 							   
-
 	#HUD Color
 	bpy.types.Scene.HUD_color = FloatVectorProperty(	
 								  name = "",
@@ -143,8 +142,8 @@ class LumierePrefs(bpy.types.AddonPreferences):
 								  size = 4,
 								  min = 0.0,
 								  max = 1.0,
-								  default = (1.0, 0.4, 0, 0.8))								   
-							   
+								  default = (1.0, 0.09, 0.3, 0.8))								   
+
 	category = bpy.props.StringProperty(
 			name="Category",
 			description="Choose a name for the category of the panel",
@@ -176,18 +175,37 @@ class LumierePrefs(bpy.types.AddonPreferences):
 #########################################################################################################
 
 #########################################################################################################
+def draw_text(color, font_id, left, height, text):
+	bgl.glColor4f(*color)
+	blf.enable(font_id,blf.SHADOW)
+	blf.shadow(font_id, 5, color[0]-.5, color[1]-.5, color[2]-.5, color[3]-.5) # blur_size being 0 means colored Font, 3 or 5 means a colored rim around the font.# Note that you can only use (0, 3, 5).
+	blf.shadow_offset(font_id,0,0)
+	blf.position(font_id, left, height, 0)
+	blf.draw(font_id, text)
+	blf.disable(font_id,blf.SHADOW)
+
+def draw_line(x, y, color, width):
+    bgl.glLineWidth(width)
+    bgl.glColor4f(*color)
+    bgl.glEnable(bgl.GL_BLEND)
+    bgl.glBegin(bgl.GL_LINES)
+    bgl.glVertex2f(x, y)
+    bgl.glVertex2f(x+250, y)
+    bgl.glEnd()
+    bgl.glLineWidth(1)
+	
 def draw_callback_px(self, context):
+	txt_add_light = "Add light: CTRL+LMB"
+	txt_normal = "Normal"
+	txt_view = "View"
 	region = context.region
-	
-	bgl.glEnable(bgl.GL_BLEND)
-	bgl.glColor4f(1.0, 0.4, 0, 0.5)
 	lw = 4 // 2
-	bgl.glLineWidth(lw*4)
+	hudcol = context.scene.HUD_color[0], context.scene.HUD_color[1], context.scene.HUD_color[2], context.scene.HUD_color[3]
+	bgl.glColor4f(*hudcol)
 	
-	hudcol = context.scene.HUD_color
-	bgl.glColor4f(hudcol[0], hudcol[1], hudcol[2], hudcol[3])
-	
-#---Draw lines around the view3D
+#---Draw frame around the view3D
+	bgl.glEnable(bgl.GL_BLEND)
+	bgl.glLineWidth(4)
 	bgl.glBegin(bgl.GL_LINE_STRIP)
 	bgl.glVertex2i(lw, lw)
 	bgl.glVertex2i(region.width - lw, lw)
@@ -198,59 +216,94 @@ def draw_callback_px(self, context):
 
 #---Text attribute 
 	font_id = 0	 
+	blf.size(font_id, 20, 72)
+
+	if not self.create_light and not self.editmode:
+		draw_text(hudcol, font_id, 20, region.height-55, txt_add_light)	
+
+#---Interactive mode
+	else:
+	#---Reflection mode
+		if self.normal:
+			draw_text(hudcol, font_id, 20, region.height-55, txt_normal)
+		else:
+			draw_text(hudcol, font_id, 20, region.height-55, txt_view)
+
+		obj_light = context.active_object
+	#---Interactive mode	
+		if obj_light is not None and obj_light.type != 'EMPTY' and obj_light.data.name.startswith("Lumiere"):
+			
+		#---Light Name
+			txt_light_name = "| Light: " + obj_light.name
+			draw_text(hudcol, font_id, 90, region.height-55, txt_light_name)
+
+		#---Draw a line
+			draw_line(20, region.height-62, hudcol, 2)
+			
+		#---Keys 
+			key_left = 20
+			key_height = region.height-82
+			
+			if self.strength_mode:
+				txt_strength = "Energy: " + str(round(obj_light.energy,2))
+				draw_text(hudcol, font_id, key_left, key_height, txt_strength)
+
+			elif self.orbit_mode:
+				if (time.time() < (self.key_start + 0.8)):
+					txt_orbit = "Orbit mode"
+					draw_text(hudcol, font_id, key_left, key_height, txt_orbit)
+				else:
+					self.orbit_mode = False
+				
+			elif self.dist_light:
+				txt_range = "Range: " + str(round(obj_light.range,2))
+				draw_text(hudcol, font_id, key_left, key_height, txt_range)
+				
+			elif self.rotate_light_z:
+				txt_rotation = "Rotation: " + str(round(math.degrees(obj_light.rotation_euler.z),2))
+				draw_text(hudcol, font_id, key_left, key_height, txt_rotation)
+			
+			elif self.falloff_mode :
+				if (time.time() < (self.key_start + 0.5)):
+					if obj_light.typfalloff == "0":
+						draw_text(hudcol, font_id, key_left, key_height, "Quadratic Falloff")
+					elif obj_light.typfalloff == "1":
+						draw_text(hudcol, font_id, key_left, key_height, "Linear Falloff")
+					elif obj_light.typfalloff == "2":
+						draw_text(hudcol, font_id, key_left, key_height, "Constant Falloff")
+				else:
+					self.falloff_mode = False
+			
+			elif self.scale_mode:
+				scale_degree = (self.scale_after * 100) / self.scale_before
+				txt_scale = "Scale: " + str(round(scale_degree,2))
+				draw_text(hudcol, font_id, key_left, key_height, txt_scale)
+
+#---Restore opengl defaults
+	bgl.glLineWidth(1)
+	bgl.glDisable(bgl.GL_BLEND)
+	bgl.glColor4f(0.0, 0.0, 0.0, 1.0)
+
+#########################################################################################################
+
+#########################################################################################################
+def edit_callback_px(self, context):
+	region = context.region
+	
+	bgl.glEnable(bgl.GL_BLEND)
+	bgl.glColor4f(1.0, 0.4, 0, 0.5)
+	lw = 4 // 2
+	bgl.glLineWidth(lw*4)
+	
+	hudcol = context.scene.HUD_color
+	bgl.glColor4f(hudcol[0], hudcol[1], hudcol[2], hudcol[3])
+	
+#---Text attribute 
+	font_id = 0	 
 	blf.size(font_id, 15, 72)
 	
-#---Reflection mode
-	if self.normal:
-		blf.position(font_id, 20, region.height-55, 0)
-		blf.draw(font_id, "Normal")
-	else:
-		blf.position(font_id, 20, region.height-55, 0)
-		blf.draw(font_id, "View")
-
-	obj_light = context.active_object
-#---Interactive mode	
-	if obj_light is not None and obj_light.type != 'EMPTY' and obj_light.data.name.startswith("Lumiere"):
-		
-	#---Light Name
-		blf.position(font_id, 80, region.height-55, 0)
-		blf.draw(font_id, "| Light: " + obj_light.name)
-	
-	#---Draw a line
-		blf.position(font_id, 20, region.height-58, 0)
-		blf.draw(font_id, "_____________________________")
-	
-	#---Keys 
-		blf.position(font_id, 20, region.height-75, 0)
-		
-		if self.strength_mode:
-			blf.draw(font_id, "Energy: " + str(round(obj_light.energy,2)))
-		
-		elif self.orbit_mode:
-			blf.draw(font_id, "Orbit mode")
-			
-		elif self.dist_light:
-			blf.draw(font_id, "Range: " + str(round(obj_light.range,2)))
-			
-		elif self.rotate_light_z:
-			blf.draw(font_id, "Rotation: " + str(round(math.degrees(obj_light.rotation_euler.z),2)))
-		
-		elif self.falloff_mode :
-			if (time.time() < (self.key_start + 0.5)):
-				if obj_light.typfalloff == "0":
-					blf.draw(font_id, "Quadratic Falloff")
-				elif obj_light.typfalloff == "1":
-					blf.draw(font_id, "Linear Falloff")
-				elif obj_light.typfalloff == "2":
-					blf.draw(font_id, "Constant Falloff")
-			else:
-				self.falloff_mode == False
-		
-		elif self.scale_mode:
-			 scale_degree = (self.scale_after * 100) / self.scale_before
-			 blf.draw(font_id, "Scale: " + str(round(scale_degree,2)))
-
-
+	blf.position(font_id, 20, region.height-55, 0)
+	blf.draw(font_id, "Interactive mode")
 				
 #---Restore opengl defaults
 	bgl.glLineWidth(1)
@@ -341,6 +394,7 @@ def raycast_light(self, distance, context, event, coord, ray_max=1000.0):
 	length_squared = 0
 	light = context.active_object
 	empty_name = light.data.name + "_Empty"
+
 	if bpy.data.objects.get(empty_name) is not None:
 		empty = context.scene.objects[empty_name]
 		light.constraints['Track To'].influence = 0
@@ -348,7 +402,6 @@ def raycast_light(self, distance, context, event, coord, ray_max=1000.0):
 #---Get the ray from the viewport and mouse
 	view_vector = view3d_utils.region_2d_to_vector_3d(self.region, self.rv3d, (coord))
 	ray_origin = view3d_utils.region_2d_to_origin_3d(self.region, self.rv3d, (coord))
-
 	ray_target = ray_origin + view_vector
 
 #---Select the object 
@@ -510,6 +563,11 @@ def emit_plan_mat():
 	emit = mat.node_tree.nodes.new(type = 'ShaderNodeEmission')
 	mat.node_tree.nodes["Emission"].inputs[0].default_value = bpy.context.active_object.lightcolor
 	emit.location = (-200,-100)
+
+#---Diffuse Node
+	diffuse = mat.node_tree.nodes.new(type = 'ShaderNodeBsdfDiffuse')
+	mat.node_tree.nodes["Diffuse BSDF"].inputs[0].default_value = bpy.context.active_object.lightcolor
+	diffuse.location = (-200,-200)
 
 #---Light Falloff
 	falloff = mat.node_tree.nodes.new(type = 'ShaderNodeLightFalloff')
@@ -979,6 +1037,7 @@ def create_light_area():
 	cobj = bpy.context.object
 	cobj.data.cycles.use_multiple_importance_sampling = True
 	cobj.typlight = bpy.context.scene.typlight
+	
 #---Link Falloff
 	emit = cobj.data.node_tree.nodes["Emission"]
 	falloff = cobj.data.node_tree.nodes.new("ShaderNodeLightFalloff")
@@ -1162,11 +1221,11 @@ class AddLight(bpy.types.Operator):
 						elif obj_light.typlight == "Area":
 							lamp = obj_light.data
 							lamp.size_y += delta * .05
-							elf.scale_after = lamp.size_y 
+							self.scale_after = lamp.size_y 
 						elif obj_light.typlight == "Spot" :
 							lamp = obj_light.data
 							lamp.spot_blend += delta * .05	
-							elf.scale_after = lamp.spot_blend 					
+							self.scale_after = lamp.spot_blend					
 							
 						self.scale_light_y = False
 												
@@ -1306,6 +1365,7 @@ class AddLight(bpy.types.Operator):
 				
 		#---Orbit mode
 			elif event.type == context.scene.Key_Orbit:
+				self.key_start = time.time()
 				self.orbit = True
 				self.orbit_mode = True
 				
@@ -1373,7 +1433,6 @@ class AddLight(bpy.types.Operator):
 			self.scale_gapx = False
 			self.rotate_light_z = False
 			self.orbit = False
-			self.orbit_mode = False
 			self.strength_mode = False
 			self.scale_mode = False
 			self.scale_before = 0
@@ -1417,6 +1476,10 @@ class AddLight(bpy.types.Operator):
 				   (event.ctrl or event.shift or event.alt)):
 					return{'PASS_THROUGH'}
 
+			#---Shift for precision mode
+			#	if event.shift and not (context.scene.Key_Scale_X or context.scene.Key_Scale_Y):
+			#		return{'PASS_THROUGH'}					
+					
 				if event.type == 'LEFTMOUSE':
 					self.lmb = event.value == 'PRESS'
 
@@ -1442,7 +1505,6 @@ class AddLight(bpy.types.Operator):
 						self.orbit = False
 						self.scale_before = self.scale_after = 0
 						
-
 					#---Define the different shape for the panel light
 						if context.scene.typlight == "Panel":
 							if not self.custom: 
@@ -1487,14 +1549,14 @@ class AddLight(bpy.types.Operator):
 				if obj_light.constraints['Track To'].influence != 0:
 					bpy.ops.object.visual_transform_apply()
 					obj_light.constraints['Track To'].influence = 0
-					self.orbit_mode = False
+
 				#---Get the new direction.
 					lightMatrix = obj_light.matrix_world
 					theAxis = (lightMatrix[0][2], lightMatrix[1][2], lightMatrix[2][2])
 					obj_light['dir'] = theAxis
 				
-				str1 ="Range: " + context.scene.Key_Scale + " || " + \
-					  "Energy: " + context.scene.Key_Strength + " || "  + \
+				str1 ="Range: " + context.scene.Key_Distance + " || " + \
+					  "Energy: " + context.scene.Key_Strength + " || "	+ \
 					  "Normal: " + context.scene.Key_Normal + " || " + \
 					  "Fallof: " + context.scene.Key_Falloff + " || " + \
 					  "Orbit: " + context.scene.Key_Orbit + " || "
@@ -1552,8 +1614,12 @@ class AddLight(bpy.types.Operator):
 
 		if context.space_data.type == 'VIEW_3D':
 
+			args = (self, context)
+			context.area.header_text_set("Add light: CTRL+LMB || Confirm: ESC or RMB")
 			if self.editmode or self.custom :
 				context.scene.objects.active = bpy.data.objects[self.act_light] 
+				context.area.header_text_set("Edit light: LMB || Confirm: ESC or RMB")
+				#self._handle = bpy.types.SpaceView3D.draw_handler_add(edit_callback_px, args, 'WINDOW', 'POST_PIXEL')
 			obj_light = context.active_object
 		
 		#---Init boolean
@@ -1570,9 +1636,7 @@ class AddLight(bpy.types.Operator):
 			self.scale_light = False
 			self.scale_light_x = False
 			self.scale_light_y = False
-			
-			
-			
+
 			if obj_light is not None and obj_light.type != 'EMPTY' and obj_light.data.name.startswith("Lumiere") and self.editmode:
 				for ob in context.scene.objects:
 					if ob.type != 'EMPTY' : 
@@ -1584,8 +1648,6 @@ class AddLight(bpy.types.Operator):
 				self.hit_world = obj_light.location
 				self.doPick = True		
 
-			context.area.header_text_set("Add light: CTRL+LMB || Confirm: ESC or RMB")
-			args = (self, context)
 			self._handle = bpy.types.SpaceView3D.draw_handler_add(draw_callback_px, args, 'WINDOW', 'POST_PIXEL')													 
 			context.window_manager.modal_handler_add(self)
 			return {'RUNNING_MODAL'}
@@ -1632,6 +1694,8 @@ def update_mat(self, context):
 			mat_name, mat = get_mat_name(cobj.data.name)
 			emit = mat.node_tree.nodes["Emission"]
 			emit.inputs[0].default_value = cobj.lightcolor
+			diffuse = mat.node_tree.nodes["Diffuse BSDF"]
+			diffuse.inputs[0].default_value = cobj.lightcolor
 			imtext = mat.node_tree.nodes['Image Texture']
 			invert = mat.node_tree.nodes['Invert']
 			invert.inputs[0].default_value = 1
@@ -1639,7 +1703,19 @@ def update_mat(self, context):
 			mat.node_tree.nodes["Light Falloff"].inputs[0].default_value = cobj.energy
 			mat.node_tree.nodes["Light Falloff"].inputs[1].default_value = cobj.smooth
 			mat.node_tree.links.new(falloff.outputs[int(cobj.typfalloff)], emit.inputs[1])			  
+			mix1 = mat.node_tree.nodes["Mix Shader"]
 			
+			if cobj.reflector:
+				#Link Diffuse 
+				mat.node_tree.links.new(diffuse.outputs[0], mix1.inputs[2])	
+				#Force to update : mat.cycles.sample_as_light = True
+				bpy.context.scene.update() 
+			else:
+				#Link Emit 
+				mat.node_tree.links.new(emit.outputs[0], mix1.inputs[2])
+				#Force to update : mat.cycles.sample_as_light = True
+				bpy.context.scene.update() 
+				
 			if cobj.filepath != "" and not cobj.gradient:
 				if cobj.unlink == True:
 					cobj.filepath = ""
@@ -1698,6 +1774,7 @@ def update_mat(self, context):
 				mat.node_tree.nodes["Light Falloff"].inputs[0].default_value = cobj.energy
 				mat.node_tree.nodes["Light Falloff"].inputs[1].default_value = cobj.smooth
 				mat.node_tree.links.new(falloff.outputs[int(cobj.typfalloff)], emit.inputs[1])
+			if cobj.typlight == "Area":
 				if cobj.gradient:
 					colramp = mat.node_tree.nodes['ColorRamp']
 					colramp.color_ramp.interpolation = cobj.gradinterpo
@@ -1793,7 +1870,7 @@ class SCENE_OT_add_gradient(Operator):
 bpy.types.Object.range = FloatProperty(
 							name="Range ",
 							description="Range from the object",
-							min=-100, max=100.0,
+							min=-10000, max=10000.0,
 							default=0.5,
 							precision=2,
 							subtype='DISTANCE',
@@ -2030,7 +2107,15 @@ bpy.types.Object.interp = FloatProperty(
 						   unit='NONE',
 						   step=0.5)	 
 
+bpy.types.Object.shadow = FloatProperty(
+						   name="Shadow type",
+						   description="Change the shadow from soft to harsh",
+						   min=0.001, max=2,
+						   precision=3,
+						   default=1) 
+						   
 bpy.types.Object.normal = bpy.props.BoolProperty(default=False)
+bpy.types.Object.reflector = bpy.props.BoolProperty(default=False, update=update_mat)
 bpy.types.Object.expanded = bpy.props.BoolProperty(default=False)
 bpy.types.Object.show = bpy.props.BoolProperty(default=True, update=show_hide_light)	
 bpy.types.Object.select_only = bpy.props.BoolProperty(default=False, update=select_only)	
@@ -2056,6 +2141,7 @@ class LumierePreferences(bpy.types.Panel):
 		cobj = context.active_object
 		col = layout.column()
 		row = col.row(align=True)
+		objects_on_layer = []
 
 		if context.mode != 'OBJECT' :
 			row.label(text="Must be in OBJECT mode",icon='BLANK1')
@@ -2089,125 +2175,130 @@ class LumierePreferences(bpy.types.Panel):
 		#---For each layer
 			for layer in bpy.data.scenes[scene.name].layers:
 				l += 1
-				objects_on_layer = [obj for obj in context.scene.objects if obj.type != 'EMPTY' and obj.layers[l] and layer == True and obj.data.name.startswith("Lumiere")]
-				if layer == True and objects_on_layer != []: 
+				light_on_layer = [obj for obj in context.scene.objects if obj.type != 'EMPTY' and  obj.layers[l] and layer == True and obj.data.name.startswith("Lumiere")]
+				if layer == True and light_on_layer != []: 
+					objects_on_layer.extend(light_on_layer)
+
+		#---Look for light in each layer
+			for object in list(set(objects_on_layer)):
+				col = layout.column(align = True)
+				box = col.box()
+				row = col.row(align=True)
+
+				if object.type != 'EMPTY' and object.data.name.startswith("Lumiere") :
 				
-				#---Look for light in each layer
-					for object in objects_on_layer:
-						col = layout.column(align = True)
-						box = col.box()
+					cobj = bpy.context.scene.objects[object.name]
+					col = layout.column(align = True)
+					row = box.row(align=True)
+					row.prop(cobj, "expanded",icon="DOWNARROW_HLT" if cobj.expanded else "RIGHTARROW",icon_only=True, emboss=False)
+					row.prop(cobj, "select_only", icon='%s' % 'GHOST_DISABLED' if cobj.show else 'GHOST_ENABLED', text='', emboss=False)
+					op = row.operator("object.add_light", icon='ACTION_TWEAK', text='', emboss=False)
+					op.editmode = True
+					op.act_light = cobj.name   
+					
+					if cobj.expanded and cobj.show == False:
+						row.alert = True
+					
+					if cobj.show :
+						if cobj.type == 'LAMP':
+							row.prop(cobj, "show", text='', icon='%s' % ('LAMP_' + cobj.data.type) ,  icon_only=True, emboss=False)
+						else:
+							if cobj.typlight == "Pencil":
+								row.prop(cobj, "show", text='', icon='%s' % 'GREASEPENCIL',	 icon_only=True, emboss=False)
+							else: 
+								row.prop(cobj, "show", text='', icon='%s' % 'OUTLINER_OB_LATTICE',	icon_only=True, emboss=False)
+						
+					else:
+						row.prop(cobj, "show", icon='%s' % 'OUTLINER_OB_LAMP' if cobj.show else 'LAMP', text='', emboss=False, translate=False)
+					row.alert = False
+					
+					if not cobj.gradient: 
+						split = row.split(0.8, align=True)
+					else :
+						split = row
+						
+					if bpy.context.active_object== cobj: split.alert = True
+					split.prop(cobj, "name", text='')
+					split.alert = False
+
+					if not cobj.gradient: 
+						split.prop(cobj, "lightcolor")
+					else: 
+						split.label(text="",icon='COLOR')
+
+					if cobj.expanded:
+						row = box.row(align=True)
+
+					#---Search list for the target object
+						row.prop_search(cobj, "objtarget", scene, "objects")
+						col = box.column(align=True)
 						row = col.row(align=True)
 
-						if object.type != 'EMPTY' and object.data.name.startswith("Lumiere") :
-						
-							cobj = bpy.context.scene.objects[object.name]
-							col = layout.column(align = True)
-							row = box.row(align=True)
-							row.prop(cobj, "expanded",icon="DOWNARROW_HLT" if cobj.expanded else "RIGHTARROW",icon_only=True, emboss=False)
-							row.prop(cobj, "select_only", icon='%s' % 'GHOST_DISABLED' if cobj.show else 'GHOST_ENABLED', text='', emboss=False)
-							op = row.operator("object.add_light", icon='ACTION_TWEAK', text='', emboss=False)
-							op.editmode = True
-							op.act_light = cobj.name   
-							
-							if cobj.expanded and cobj.show == False:
-								row.alert = True
-							
-							if cobj.show :
-								if cobj.type == 'LAMP':
-									row.prop(cobj, "show", text='', icon='%s' % ('LAMP_' + cobj.data.type) ,  icon_only=True, emboss=False)
-								else:
-									if cobj.typlight == "Pencil":
-										row.prop(cobj, "show", text='', icon='%s' % 'GREASEPENCIL',	 icon_only=True, emboss=False)
-									else: 
-										row.prop(cobj, "show", text='', icon='%s' % 'OUTLINER_OB_LATTICE',	icon_only=True, emboss=False)
-								
+						if cobj.typlight != "Sky" : 
+							if cobj.typlight == "Panel":
+								row.prop(cobj, "reflector", text='Reflector', toggle=True)
+								row = col.row(align=True)
+								row.prop(cobj.data.materials['Mat_'+cobj.data.name].cycles, "sample_as_light", text='MIS', toggle=True)
 							else:
-								row.prop(cobj, "show", icon='%s' % 'OUTLINER_OB_LAMP' if cobj.show else 'LAMP', text='', emboss=False, translate=False)
-							row.alert = False
-							
-							if not cobj.gradient: 
-								split = row.split(0.8, align=True)
-							else :
-								split = row
-								
-							if bpy.context.active_object== cobj: split.alert = True
-							split.prop(cobj, "name", text='')
-							split.alert = False
+								row.prop(cobj.data.cycles, "use_multiple_importance_sampling", text='MIS', toggle=True)
+								row.prop(cobj.data.cycles, "cast_shadow", text='Shadows', toggle=True)
+							row.prop(cobj.cycles_visibility, "diffuse", text='Diff', toggle=True)
+							row.prop(cobj.cycles_visibility, "glossy", text='Spec', toggle=True)
+						
+						if not cobj.reflector :
+						#---Energy / Smooth
+							col = box.column(align=True)
+							row = col.row(align=True)
+							row.prop(cobj, "energy")
+							if cobj.typlight != "Sky":
 
-							if not cobj.gradient: 
-								split.prop(cobj, "lightcolor")
-							else: 
-								split.label(text="",icon='COLOR')
-
-							if cobj.expanded:
-								row = box.row(align=True)
-
-							#---Search list for the target object
-								row.prop_search(cobj, "objtarget", scene, "objects")
-								col = box.column(align=True)
-								row = col.row(align=True)
-								if cobj.typlight != "Sky" : 
-									if cobj.typlight == "Panel":
-										row.prop(cobj.data.materials['Mat_'+cobj.data.name].cycles, "sample_as_light", text='MIS', toggle=True)
-									else:
-										row.prop(cobj.data.cycles, "use_multiple_importance_sampling", text='MIS', toggle=True)
-										row.prop(cobj.data.cycles, "cast_shadow", text='Shadows', toggle=True)
-									row.prop(cobj.cycles_visibility, "diffuse", text='Diff', toggle=True)
-									row.prop(cobj.cycles_visibility, "glossy", text='Spec', toggle=True)
-								
-							#---Energy / Smooth
-								col = box.column(align=True)
-								row = col.row(align=True)
-								row.prop(cobj, "energy")
-								if cobj.typlight != "Sky":
-
-									if cobj.typlight != "Sun":
-									#---Falloff
-										row = col.row(align=True)
-										split = row.split(0.6, align=True)
-										split.prop(cobj, "typfalloff") 
-										
-									#---Smooth
-										split.prop(cobj, "smooth")
-
-								else:
+								if cobj.typlight != "Sun":
+								#---Falloff
 									row = col.row(align=True)
-									row.prop(cobj, "skynode", text="World node", icon="BLANK1")
+									split = row.split(0.6, align=True)
+									split.prop(cobj, "typfalloff") 
+									
+								#---Smooth
+									split.prop(cobj, "smooth")
 
-							#---Gradient UILIST for panel
-								if cobj.typlight in ("Panel", "Pencil", "Area"):
-								 
-									if not cobj.gradient:
-										col = box.column(align=True)
-										row = col.row(align=True)
-										if cobj.expanded and cobj.show == False:
-											row.alert = True
-										row.operator("object.add_gradient", icon='BLANK1').act_light = cobj.name
-										row.alert = False
-									else:
-										col = box.column(align=True)
-										row = col.row(align=True)
-										row.prop(cobj, "gradient", text='Gradient type :', icon='BLANK1')
-										row = box.row(align=True)
-										
-										if cobj.typlight in ("Panel", "Pencil"): 
-											row.prop(cobj, "typgradient", text="")
-											colramp = cobj.data.materials['Mat_' + cobj.data.name].node_tree.nodes['ColorRamp']
-										else:
-											colramp = cobj.data.node_tree.nodes['ColorRamp']
-											
-										box.template_color_ramp(colramp, "color_ramp", expand=True)
-									   
-								col = box.column(align=True)
+							else:
 								row = col.row(align=True)
-								if not cobj.gradient and cobj.typlight != "Sky":
-									if cobj.typlight in ("Panel", "Pencil"):
-										row = col.row(align=True)
-										if cobj.filepath == "" and cobj.unlink == False:
-											row.prop(cobj, "filepath")
-										else:
-											row.prop(cobj, "unlink", icon='ZOOMOUT')
-											row.prop(cobj, "filepath")
+								row.prop(cobj, "skynode", text="World node", icon="BLANK1")
+							col = box.column(align=True)
+							row = col.row(align=True)
+						#---Gradient
+							if cobj.typlight in ("Panel", "Pencil", "Area"):
+							 
+								if not cobj.gradient:
+
+									if cobj.expanded and cobj.show == False:
+										row.alert = True
+									row.operator("object.add_gradient", icon='BLANK1').act_light = cobj.name
+									row.alert = False
+								else:
+									col = box.column(align=True)
+									row = col.row(align=True)
+									row.prop(cobj, "gradient", text='Gradient type :', icon='BLANK1')
+									row = box.row(align=True)
+									
+									if cobj.typlight in ("Panel", "Pencil"): 
+										row.prop(cobj, "typgradient", text="")
+										colramp = cobj.data.materials['Mat_' + cobj.data.name].node_tree.nodes['ColorRamp']
+									else:
+										colramp = cobj.data.node_tree.nodes['ColorRamp']
+								   
+									box.template_color_ramp(colramp, "color_ramp", expand=True)
+									
+							col = box.column(align=True)
+							row = col.row(align=True)						
+							if not cobj.gradient and cobj.typlight != "Sky":
+								if cobj.typlight in ("Panel", "Pencil"):
+									row = col.row(align=True)
+									if cobj.filepath == "" and cobj.unlink == False:
+										row.prop(cobj, "filepath")
+									else:
+										row.prop(cobj, "unlink", icon='ZOOMOUT')
+										row.prop(cobj, "filepath")
 
 #########################################################################################################
 
