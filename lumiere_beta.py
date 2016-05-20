@@ -1713,8 +1713,7 @@ def update_mat(self, context):
 			else:
 				#Link Emit 
 				mat.node_tree.links.new(emit.outputs[0], mix1.inputs[2])
-				#Force to update : mat.cycles.sample_as_light = True
-				bpy.context.scene.update() 
+ 
 				
 			if cobj.filepath != "" and not cobj.gradient:
 				if cobj.unlink == True:
