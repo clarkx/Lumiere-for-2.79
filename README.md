@@ -6,7 +6,7 @@ Wiki : https://github.com/clarkx/Lumiere/wiki
 Changelog :
 Ver 0.70 :
 - Update UI :
-  - Add a selector widget. The selector will turn red to show you which light as been selected.
+  - Add a selection widget. The switch turns red to show you what light was selected.
   - Move the strengh in the upper of the panel. Easier to acces.
   - Bug fixes.
 
