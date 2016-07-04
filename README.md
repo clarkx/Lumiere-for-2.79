@@ -4,6 +4,17 @@
 Wiki : https://github.com/clarkx/Lumiere/wiki
 
 Changelog :
+Ver 0.70 :
+- Update UI :
+  - Add a selector widget. The selector will turn red to show you which light as been selected.
+  - Move the strengh in the upper of the panel. Easier to acces.
+  - Bug fixes.
+
+****
+Ver 0.65 :
+- New Reflector option : 
+  - Turn your light into a diffuse object
+ 
 ****
 Ver 0.60 :
 - New custom light button:
