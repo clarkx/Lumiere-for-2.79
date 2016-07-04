@@ -21,7 +21,7 @@
 bl_info = {
 	"name": "Lumiere",
 	"author": "Cédric Brandin, Nathan Craddock",
-	"version": (0, 0, 65),
+	"version": (0, 0, 70),
 	"blender": (2, 76, 3),
 	"location": "View3D",
 	"description": "Interactive Lighting Add-on",
@@ -36,11 +36,11 @@ from mathutils import Vector, Matrix, Quaternion, Euler
 from bpy.types import PropertyGroup, UIList, Panel, Operator
 from bpy.props import IntProperty, FloatProperty, BoolProperty, FloatVectorProperty, EnumProperty, StringProperty, CollectionProperty, PointerProperty
 from bpy_extras.object_utils import AddObjectHelper, object_data_add
+from collections import defaultdict
 import math
 import bmesh
 import time
 
-		
 
 #########################################################################################################
 
@@ -185,14 +185,14 @@ def draw_text(color, font_id, left, height, text):
 	blf.disable(font_id,blf.SHADOW)
 
 def draw_line(x, y, color, width):
-    bgl.glLineWidth(width)
-    bgl.glColor4f(*color)
-    bgl.glEnable(bgl.GL_BLEND)
-    bgl.glBegin(bgl.GL_LINES)
-    bgl.glVertex2f(x, y)
-    bgl.glVertex2f(x+250, y)
-    bgl.glEnd()
-    bgl.glLineWidth(1)
+	bgl.glLineWidth(width)
+	bgl.glColor4f(*color)
+	bgl.glEnable(bgl.GL_BLEND)
+	bgl.glBegin(bgl.GL_LINES)
+	bgl.glVertex2f(x, y)
+	bgl.glVertex2f(x+250, y)
+	bgl.glEnd()
+	bgl.glLineWidth(1)
 	
 def draw_callback_px(self, context):
 	txt_add_light = "Add light: CTRL+LMB"
@@ -275,10 +275,33 @@ def draw_callback_px(self, context):
 					self.falloff_mode = False
 			
 			elif self.scale_mode:
-				scale_degree = (self.scale_after * 100) / self.scale_before
-				txt_scale = "Scale: " + str(round(scale_degree,2))
+				if obj_light.typlight == "Spot" :
+					txt_scale = "Size: " + str(round(math.degrees(bpy.data.lamps[obj_light.data.name].spot_size),2))
+				elif obj_light.typlight in ("Point", "Sun") :
+					txt_scale = "Size: " + str(round(bpy.data.lamps[obj_light.data.name].shadow_soft_size,2))
+				else:
+					scale_degree = (self.scale_after * 100) / self.scale_before
+					txt_scale = "Scale: " + str(round(scale_degree,2))
 				draw_text(hudcol, font_id, key_left, key_height, txt_scale)
+			
+			elif self.scale_mode_x:
+				if obj_light.typlight == "Spot" :
+					txt_scale = "Shadow size: " + str(round(bpy.data.lamps[obj_light.data.name].shadow_soft_size,2))
+					draw_text(hudcol, font_id, key_left, key_height, txt_scale)
+				elif obj_light.typlight in ("Panel", "Area"):
+					scale_degree = (self.scale_after * 100) / self.scale_before
+					txt_scale = "Scale X: " + str(round(scale_degree,2))
+					draw_text(hudcol, font_id, key_left, key_height, txt_scale)
 
+			elif self.scale_mode_y:
+				if obj_light.typlight == "Spot" :
+					txt_scale = "Blend: " + str(round(bpy.data.lamps[obj_light.data.name].spot_blend,2))
+					draw_text(hudcol, font_id, key_left, key_height, txt_scale)
+				elif obj_light.typlight in ("Panel", "Area"):
+					scale_degree = (self.scale_after * 100) / self.scale_before
+					txt_scale = "Scale Y: " + str(round(scale_degree,2))
+					draw_text(hudcol, font_id, key_left, key_height, txt_scale)
+				
 #---Restore opengl defaults
 	bgl.glLineWidth(1)
 	bgl.glDisable(bgl.GL_BLEND)
@@ -382,6 +405,7 @@ class RemoveLight(bpy.types.Operator):
 		bpy.ops.object.delete()
 		return {"FINISHED"}
 
+
 #########################################################################################################
 
 #########################################################################################################
@@ -466,6 +490,9 @@ def raycast_light(self, distance, context, event, coord, ray_max=1000.0):
 				self.hit_world = hit_world
 				self.direction = direction
 				self.target_name = obj.name
+			#---Parent the light to the target object
+				light.parent = obj
+				light.matrix_parent_inverse = obj.matrix_world.inverted()		
 				
 #---Define location, rotation and scale
 	if length_squared > 0 :
@@ -501,26 +528,22 @@ def add_gradient(self, context):
 	#---Color Ramp Node
 		colramp = mat.node_tree.nodes.new(type="ShaderNodeValToRGB")
 		colramp.color_ramp.elements[0].color = (1,1,1,1)
-		colramp.location = (-700,-120) 
+		colramp.location = (-920,-120) 
 
 	#---Grandient Node 
 		grad = mat.node_tree.nodes.new(type="ShaderNodeTexGradient")
 		#Link to ColorRamp
 		mat.node_tree.links.new(grad.outputs[0], colramp.inputs['Fac'])
-		grad.location = (-900,-120) 
+		grad.location = (-1120,-120) 
 		
 	#---Mapping Node
 		textmap = mat.node_tree.nodes.new(type="ShaderNodeMapping")
 		textmap.vector_type = "TEXTURE"
-		#Link to Grandient
-		#mat.node_tree.links.new(textmap.outputs[0], grad.inputs['Vector'])
-		textmap.location = (-1300,-120) 
+		textmap.location = (-1520,-120) 
 
 	#---Geometry Node
 		geom = mat.node_tree.nodes.new(type="ShaderNodeNewGeometry")
-		#Link to the mapping nodes
-		#mat.node_tree.links.new(geom.outputs[5], textmap.inputs['Vector'])
-		geom.location = (-1500,-240)		 
+		geom.location = (-1720,-240)		 
 
 #########################################################################################################
 
@@ -540,12 +563,12 @@ def emit_plan_mat():
 
 #---Texture Coordinate
 	coord = mat.node_tree.nodes.new(type = 'ShaderNodeTexCoord')
-	coord.location = (-1500,00) 
+	coord.location = (-1720,00) 
 	
 #---Texture Shader Node
 	texture = mat.node_tree.nodes.new(type = 'ShaderNodeTexImage')
 	mat.node_tree.links.new(coord.outputs[0], texture.inputs[0])
-	texture.location = (-600,150)
+	texture.location = (-820,160)
 			
 #---Geometry Node : Backface
 	backface = mat.node_tree.nodes.new(type = 'ShaderNodeNewGeometry')
@@ -569,12 +592,19 @@ def emit_plan_mat():
 	mat.node_tree.nodes["Diffuse BSDF"].inputs[0].default_value = bpy.context.active_object.lightcolor
 	diffuse.location = (-200,-200)
 
+#---Multiply
+	multiply = mat.node_tree.nodes.new(type = 'ShaderNodeMath')
+	mat.node_tree.nodes['Math'].operation = 'MULTIPLY'
+	#Link Coordinate
+	mat.node_tree.links.new(multiply.outputs[0], emit.inputs[1])
+	multiply.location = (-460,-180)
+	
 #---Light Falloff
 	falloff = mat.node_tree.nodes.new(type = 'ShaderNodeLightFalloff')
 	#Link Coordinate
-	mat.node_tree.links.new(falloff.outputs[1], emit.inputs[1])
-	falloff.location = (-400,-200)
-		
+	mat.node_tree.links.new(falloff.outputs[1], multiply.inputs[0])
+	falloff.location = (-640,-200)
+
 #---Mix Shader Node 1
 	mix1 = mat.node_tree.nodes.new(type="ShaderNodeMixShader")
 	#Link Invert 
@@ -609,8 +639,8 @@ def light_energy(cobj):
 
 	if cobj.typlight in ("Panel", "Pencil"):
 
-#	#---If the object is a copy, need to copy the material and rename it		
 		mat_name, mat = get_mat_name(cobj.data.name)
+#	#---If the object is a copy, need to copy the material and rename it		
 #		obj_mat = cobj.material_slots[0].name
 #		if mat_name != obj_mat:
 #			new_material = bpy.data.materials[obj_mat].copy()
@@ -1120,7 +1150,7 @@ class AddLight(bpy.types.Operator):
 	"""Create a new light"""
 	bl_idname = "object.add_light"
 	bl_label = "Add Light"
-	bl_options = {'REGISTER', 'UNDO', 'GRAB_CURSOR'}
+	bl_options = {'UNDO', 'GRAB_CURSOR'}
 
 	#-------------------------------------------------------------------
 	count=0
@@ -1164,7 +1194,11 @@ class AddLight(bpy.types.Operator):
 							obj_light.scale[0] += delta*.1
 							obj_light.scale[1] += delta*.1
 							self.scale_after = obj_light.scale[0]
-						elif obj_light.typlight in ("Point", "Sun", "Spot") :
+						elif obj_light.typlight == "Spot":
+							lamp = obj_light.data
+							lamp.spot_size += delta * .05
+							self.scale_after = lamp.spot_size
+						elif obj_light.typlight in ("Point", "Sun") :
 							lamp = obj_light.data
 							lamp.shadow_soft_size += delta * .05
 							self.scale_after = lamp.shadow_soft_size
@@ -1186,7 +1220,7 @@ class AddLight(bpy.types.Operator):
 				#---Scale on X - Only for panel type
 					elif self.scale_light_x:
 						self.modif = True
-						self.scale_mode = True
+						self.scale_mode_x = True
 						delta = event.mouse_x - self.first_mouse_x
 						if obj_light.typlight == "Panel":
 							if obj_light.shape == "Star": 
@@ -1201,15 +1235,15 @@ class AddLight(bpy.types.Operator):
 							self.scale_after = lamp.size
 						elif obj_light.typlight == "Spot" :
 							lamp = obj_light.data
-							lamp.spot_size += delta * .05
-							self.scale_after = lamp.spot_size
+							lamp.shadow_soft_size += delta * .05
+							self.scale_after = lamp.shadow_soft_size
 							
 						self.scale_light_x = False
 						
 				#---Scale on Y - Only for panel type
 					elif self.scale_light_y:
 						self.modif = True
-						self.scale_mode = True
+						self.scale_mode_y = True
 						delta = event.mouse_x - self.first_mouse_x
 						if obj_light.typlight == "Panel":
 							if obj_light.shape == "Star": 
@@ -1435,6 +1469,8 @@ class AddLight(bpy.types.Operator):
 			self.orbit = False
 			self.strength_mode = False
 			self.scale_mode = False
+			self.scale_mode_x = False
+			self.scale_mode_y = False
 			self.scale_before = 0
 			
 	def check_region(self,context,event):
@@ -1561,17 +1597,21 @@ class AddLight(bpy.types.Operator):
 					  "Fallof: " + context.scene.Key_Falloff + " || " + \
 					  "Orbit: " + context.scene.Key_Orbit + " || "
 				str2 =" "
-				if context.scene.typlight in ("Panel"):
+				if obj_light.typlight in ("Panel"):
 					str2 = "Scale: " + context.scene.Key_Scale + "+Mouse Move ||" + \
 						   "Scale X: " + context.scene.Key_Scale_X + " || " + \
 						   "Scale Y: " + context.scene.Key_Scale_Y + " || " + \
 						   "Arrows: Grid || Page UP/DOWN: Shape"
-				elif context.scene.typlight in ("Area"):
+				elif obj_light.typlight in ("Area"):
 					str2 = "Scale: " + context.scene.Key_Scale + "+Mouse Move ||" + \
 						   "Scale X: " + context.scene.Key_Scale_X + " || " + \
 						   "Scale Y: " + context.scene.Key_Scale_Y + " || "
+				elif obj_light.typlight in ("Spot"):
+					str2 = "Scale Cone: " + context.scene.Key_Scale + " || " + \
+						   "Softness: " + context.scene.Key_Scale_X + " || " + \
+						   "Blend Cone: " + context.scene.Key_Scale_Y + " || "
 				else:
-					str2 = "Softness: " + context.scene.Key_Scale
+					str2 = "Softness: " + context.scene.Key_Scale 
 				text_header = str1 + str2 + " || Confirm: RMB"
 				context.area.header_text_set(text_header)
 				self.transform_light(context, event, obj_light)
@@ -1632,6 +1672,8 @@ class AddLight(bpy.types.Operator):
 			self.strength_light = False
 			self.strength_mode = False
 			self.scale_mode = False
+			self.scale_mode_x = False
+			self.scale_mode_y = False			
 			self.rotate_light_z = False
 			self.scale_light = False
 			self.scale_light_x = False
@@ -1680,7 +1722,7 @@ def update_sky(self, context):
 	#4000 -> HORIZON // 5780 -> Daylight
 	blackbody.inputs[0].default_value = 4000 + (1780 * vec.z)	  
 	bpy.data.worlds["World"].use_nodes = cobj.skynode
-				
+
 #########################################################################################################
 
 #########################################################################################################
@@ -1689,7 +1731,6 @@ def update_mat(self, context):
 	cobj = self
 
 	if cobj.type != 'EMPTY' and cobj.data.name.startswith("Lumiere"):
-
 		if cobj.type == "MESH":
 			mat_name, mat = get_mat_name(cobj.data.name)
 			emit = mat.node_tree.nodes["Emission"]
@@ -1700,20 +1741,23 @@ def update_mat(self, context):
 			invert = mat.node_tree.nodes['Invert']
 			invert.inputs[0].default_value = 1
 			falloff = mat.node_tree.nodes["Light Falloff"]
+			multiply = mat.node_tree.nodes["Math"]
+			mat.node_tree.nodes['Math'].operation = 'MULTIPLY'
 			mat.node_tree.nodes["Light Falloff"].inputs[0].default_value = cobj.energy
 			mat.node_tree.nodes["Light Falloff"].inputs[1].default_value = cobj.smooth
-			mat.node_tree.links.new(falloff.outputs[int(cobj.typfalloff)], emit.inputs[1])			  
+			mat.node_tree.links.new(falloff.outputs[int(cobj.typfalloff)], multiply.inputs[0])	
+			mat.node_tree.links.new(multiply.outputs[0], emit.inputs[1])
 			mix1 = mat.node_tree.nodes["Mix Shader"]
 			
 			if cobj.reflector:
 				#Link Diffuse 
 				mat.node_tree.links.new(diffuse.outputs[0], mix1.inputs[2])	
+				
 				#Force to update : mat.cycles.sample_as_light = True
-				bpy.context.scene.update() 
+				#bpy.context.scene.update() 
 			else:
 				#Link Emit 
 				mat.node_tree.links.new(emit.outputs[0], mix1.inputs[2])
- 
 				
 			if cobj.filepath != "" and not cobj.gradient:
 				if cobj.unlink == True:
@@ -1733,7 +1777,7 @@ def update_mat(self, context):
 				if imtext.outputs['Color'].links:
 					mat.node_tree.links.remove(imtext.outputs['Color'].links[0])
 
-			if cobj.gradient:
+			if cobj.gradient and not cobj.reflector:
 				colramp = mat.node_tree.nodes['ColorRamp']
 				grad = mat.node_tree.nodes['Gradient Texture']
 				textmap = mat.node_tree.nodes['Mapping']
@@ -1793,56 +1837,69 @@ def show_hide_light(self, context):
 	else:
 		cobj.hide = False
 		cobj.hide_render = False
-
+		
 #########################################################################################################
 
 #########################################################################################################
 def select_only(self, context):
 	cobj = self
+
+#---Active only the visible light
+	context.scene.objects.active = bpy.data.objects[cobj.name] 
+
+#---Deselect and hide all the lights in the scene and show the active light
 	for ob in bpy.context.scene.objects:
+			ob.select = False
 			if ob.type != 'EMPTY' and ob.data.name.startswith("Lumiere") and (ob.name != cobj.name) and cobj.show:
 				if cobj.select_only:
 					if ob.show: ob.show = False
 				else:
 					if not ob.show: ob.show = True
 
+#---Select only the visible light
+	cobj.select = True
+	
 #########################################################################################################
 
 #########################################################################################################
-def update_gradient_pos(self, context):
-	index = eval(str(repr(self) + ".nbr"))
-	mat_name, mat = get_mat_name(context.scene.objects.active.data.name)
+class SCENE_OT_select_light(Operator):
+	"""
+	Deselect all the lights in the scene and make the light active and selected
+	"""
 	
-	if context.active_object.typlight not in ("Panel", "Pencil"):
-		mat = context.active_object.data
+	bl_idname = "object.select_light"
+	bl_label = "Select light"
+	
+	act_light = bpy.props.StringProperty()
+	
+	def execute(self, context):
 		
-	cobj = context.active_object
-	colramp = mat.node_tree.nodes['ColorRamp'].color_ramp
-	colramp.elements[index].position = cobj.prop_group.coll[index].pos
+		if self.act_light != "": 
+			context.scene.objects.active = bpy.data.objects[self.act_light]	
+			obj_light = context.active_object
+			
+			for ob in bpy.context.scene.objects:
+					if ob.name != obj_light.name:
+						ob.select = False
+						ob.select_light = False
+		else:
+			self.act_light = context.active_object.name
+			
+		obj_light = context.active_object
+		obj_light.select = True
+		obj_light.select_light = True
 
-def update_gradient_col(self, context):
-	index = eval(str(repr(self) + ".nbr"))
-	mat_name, mat = get_mat_name(context.scene.objects.active.data.name)
-	
-	if context.active_object.typlight not in ("Panel", "Pencil"):
-		mat = context.active_object.data
-	cobj = context.active_object
-	colramp = mat.node_tree.nodes['ColorRamp'].color_ramp
-	colramp.elements[index].color = cobj.prop_group.coll[index].col
+		return {'FINISHED'}
+				
+#########################################################################################################
 
-class Entry(PropertyGroup):
-	pos = FloatProperty(name="", min=0, max=1, precision=2, default=0.5, update=update_gradient_pos)
-	col = FloatVectorProperty(name="", min= 0, max= 1, subtype = "COLOR",  size = 4, update=update_gradient_col)
-	nbr = IntProperty()
-
-class Group(PropertyGroup):
-	coll = CollectionProperty(type=Entry)
-	index = IntProperty()
-
+#########################################################################################################
 class SCENE_OT_add_gradient(Operator):
 	bl_idname = "object.add_gradient"
 	bl_label = "Gradient"
-	
+	"""
+	Set gradient to true
+	"""	
 	act_light = bpy.props.StringProperty()
 	
 	def execute(self, context):
@@ -1853,18 +1910,14 @@ class SCENE_OT_add_gradient(Operator):
 			self.act_light = context.active_object.name
 		
 		cobj = context.active_object
-		
-		if bpy.data.objects[self.act_light].show == True:
-		#---Initialise the gradient
-			context.active_object.gradient = True
-		else:
-			self.report({'INFO'}, 'The light must be in Show Mode')
+		bpy.data.objects[self.act_light].gradient = True
+
 		return {'FINISHED'}
 
 #########################################################################################################
 
-#########################################################################################################
-
+#########################################################################################################	
+		
 # range from the object
 bpy.types.Object.range = FloatProperty(
 							name="Range ",
@@ -1881,6 +1934,7 @@ bpy.types.Object.energy = FloatProperty(
 						  name="Strength",
 						  description="Strength of the light",
 						  min=0.01, max=100000.0,
+						  soft_min=0.0, soft_max=100.0,
 						  default=10,
 						  precision=2,
 						  subtype='NONE',
@@ -1912,7 +1966,7 @@ bpy.types.Object.objtarget = StringProperty(
 						   name="Target",
 						   description="Select an object",)
 
-bpy.types.Object.typlight = EnumProperty(name="Type ", 
+bpy.types.Object.typlight = EnumProperty(name="", 
 						   items=(
 						   ("Panel", "Panel light", "", 1),
 						   ("Point", "Point light", "", 2),
@@ -2113,11 +2167,13 @@ bpy.types.Object.shadow = FloatProperty(
 						   precision=3,
 						   default=1) 
 						   
-bpy.types.Object.normal = bpy.props.BoolProperty(default=False)
-bpy.types.Object.reflector = bpy.props.BoolProperty(default=False, update=update_mat)
-bpy.types.Object.expanded = bpy.props.BoolProperty(default=False)
-bpy.types.Object.show = bpy.props.BoolProperty(default=True, update=show_hide_light)	
-bpy.types.Object.select_only = bpy.props.BoolProperty(default=False, update=select_only)	
+bpy.types.Object.normal = BoolProperty(default=False)
+bpy.types.Object.reflector = BoolProperty(default=False, update=update_mat)
+bpy.types.Object.expanded = BoolProperty(default=False)
+bpy.types.Object.show = BoolProperty(default=True, update=show_hide_light)	
+bpy.types.Object.select_only = BoolProperty(default=False, update=select_only)	
+bpy.types.Object.select_light = BoolProperty(default=False)	
+
 #########################################################################################################
 
 #########################################################################################################
@@ -2128,176 +2184,209 @@ class LumierePreferences(bpy.types.Panel):
 	bl_region_type = "TOOLS"
 	bl_category = "Lumiere"
 	bl_label = "Lumiere"
-
-	def draw_header(self, context):
-		layout = self.layout
-		cobj = context.object
-		#layout.prop(cobj, "select", text="")
+	bl_context = "objectmode"
 	
+	@classmethod
+	def poll(cls, context):
+		return (context.mode == 'OBJECT')
+		
 	def draw(self, context):
-		layout = self.layout
 		scene = context.scene
 		cobj = context.active_object
-		col = layout.column()
-		row = col.row(align=True)
+		layout = self.layout
+		row = layout.row(align=True)
+
 		objects_on_layer = []
 
-		if context.mode != 'OBJECT' :
-			row.label(text="Must be in OBJECT mode",icon='BLANK1')
-		else:
 #----------------------------------
-# ADD MODE
+# ADD / REMOVE 
 #----------------------------------					   
-		#---Type Light / Shape			
-			col = layout.column(align=True)
-			row = col.row(align=True)
-			row.operator("object.add_light", text="Add Light", icon='BLANK1').editmode = False	
+	#---Type Light / Shape			
+		col = row.column(align=True)
+		row = col.row(align=True)
+		row.operator("object.add_light", text="Add Light", icon='BLANK1').editmode = False	
+		
+	#---Remove the light and the empty target
+		if cobj is not None and cobj.type != 'EMPTY' and hasattr(cobj, "data") and cobj.data.name.startswith("Lumiere"):
+			op = row.operator("object.remove", text="Remove light", icon='BLANK1')
+			op.name = cobj.data.name 
+		elif cobj is not None and cobj.type != 'EMPTY' and hasattr(cobj, "data"):
+			op = row.operator("object.add_light", text="Create light", icon='BLANK1')
+			op.act_light = cobj.name
+			op.custom = True
 
-		#---Remove the light and the empty target
-			if cobj is not None and cobj.type != 'EMPTY' and hasattr(cobj, "data") and cobj.data.name.startswith("Lumiere"):
-				op = row.operator("object.remove", text="Remove light", icon='BLANK1')
-				op.name = cobj.data.name 
-			elif cobj is not None and cobj.type != 'EMPTY' and hasattr(cobj, "data"):
-				op = row.operator("object.add_light", text="Create light", icon='BLANK1')
-				op.act_light = cobj.name
-				op.custom = True
+		row = col.row(align=True)
+		row.prop(scene, "typlight")
+		if scene.typlight == "Panel": 
+			row.prop(scene, "shape", text="")
 
-			row = col.row(align=True)
-			row.prop(scene, "typlight")
-			if scene.typlight == "Panel": 
-				row.prop(scene, "shape", text="")
 
 #----------------------------------
 # EDIT MODE
 #----------------------------------			
-			l = -1		
-		#---For each layer
-			for layer in bpy.data.scenes[scene.name].layers:
-				l += 1
-				light_on_layer = [obj for obj in context.scene.objects if obj.type != 'EMPTY' and  obj.layers[l] and layer == True and obj.data.name.startswith("Lumiere")]
-				if layer == True and light_on_layer != []: 
-					objects_on_layer.extend(light_on_layer)
-
-		#---Look for light in each layer
-			for object in list(set(objects_on_layer)):
-				col = layout.column(align = True)
-				box = col.box()
-				row = col.row(align=True)
-
-				if object.type != 'EMPTY' and object.data.name.startswith("Lumiere") :
+		l = -1	
 				
-					cobj = bpy.context.scene.objects[object.name]
-					col = layout.column(align = True)
+	#---For each layer
+		for layer in bpy.data.scenes[scene.name].layers:
+			l += 1
+			#light_on_layer = [obj for obj in context.scene.objects and obj.type != 'EMPTY' and obj.layers[l] and layer == True and obj.data.name.startswith("Lumiere")]
+			light_on_layer = [obj for obj in context.scene.objects if obj.type != 'EMPTY' and obj.layers[l] and layer == True and obj.data.name.startswith("Lumiere")]
+			if layer == True and light_on_layer != []: 
+				objects_on_layer.extend(light_on_layer)
+			
+				
+		col = layout.column()
+
+		"""
+		#########################################################################################################
+		#########################################################################################################
+		# LIGHTS
+		#########################################################################################################
+		#########################################################################################################
+		"""
+		
+	#---For each light on the selected layer(s)
+		for object in list(set(objects_on_layer)):
+
+			col = layout.column()
+			box = col.box()
+			split = box.split(.17)
+
+			if object.type != 'EMPTY' and object.data.name.startswith("Lumiere") :
+				cobj = bpy.context.scene.objects[object.name]
+
+				col = split.column(align=True)
+				bsplit = col.row()
+				bsplit.scale_y = .8
+				
+			#---Tweak the light (edit mode)
+				op = bsplit.operator("object.add_light", icon='ACTION_TWEAK', text='', emboss=False)
+				op.editmode = True
+				op.act_light = cobj.name   
+				
+			#---Select only this light and hide all the other
+				bsplit.prop(cobj, "select_only", icon='%s' % 'GHOST_DISABLED' if cobj.show else 'GHOST_ENABLED', text='', emboss=False)
+
+			#---Expand the light options
+				bsplit = col.row()
+				bsplit.prop(cobj, "expanded",icon="MOVE_UP_VEC" if cobj.expanded else "MOVE_DOWN_VEC",icon_only=True, emboss=False)
+			
+			#---If the light is not hide
+				if cobj.show :
+
+				#---Scale the selection button by half
+					split = split.split(.05, align=True)
+					col = split.column(align=True)
+					bsplit2 = col.row(align=True)
+					bsplit2.scale_y = 1.7
+					
+				#--Hide the light
+					bsplit.prop(cobj, "show", text='', icon='OUTLINER_OB_LAMP' ,	 icon_only=True, emboss=False)
+
+
+				#---Alert if the light is selected	
+					if (context.scene.objects.active == cobj) :
+						bsplit2.alert = True
+						
+				#---Select the light
+					op = bsplit2.operator("object.select_light", text ='', icon='BLANK1')
+					op.act_light = cobj.name 
+
+				#---End of the alert 
+					bsplit2.alert = False
+					
+			#---If the light is hide : Show the light
+				else:
+					bsplit.prop(cobj, "show", icon='%s' % 'OUTLINER_OB_LAMP' if cobj.show else 'LAMP', text='', emboss=False, translate=False)
+				
+				split = split.split(align=True)
+				col = split.column(align=True)
+				row = col.row(align=True)
+				if not cobj.gradient: 
+					bsplit3 = row.split(0.9, align=True)
+				else:
+					bsplit3 = row
+
+				if bpy.context.active_object== cobj: split.alert = True
+				bsplit3.prop(cobj, "name", text='')
+				bsplit3.alert = False
+
+				if not cobj.gradient: 
+					bsplit3.prop(cobj, "lightcolor")
+				else: 
+					bsplit3.label(text="",icon='COLOR')
+
+			#---Light strength
+				row = col.row(align=True)
+				row.scale_y = .7
+				row.prop(cobj, "energy", text='', slider = True)	
+
+				if cobj.expanded:
 					row = box.row(align=True)
-					row.prop(cobj, "expanded",icon="DOWNARROW_HLT" if cobj.expanded else "RIGHTARROW",icon_only=True, emboss=False)
-					row.prop(cobj, "select_only", icon='%s' % 'GHOST_DISABLED' if cobj.show else 'GHOST_ENABLED', text='', emboss=False)
-					op = row.operator("object.add_light", icon='ACTION_TWEAK', text='', emboss=False)
-					op.editmode = True
-					op.act_light = cobj.name   
-					
-					if cobj.expanded and cobj.show == False:
-						row.alert = True
-					
-					if cobj.show :
-						if cobj.type == 'LAMP':
-							row.prop(cobj, "show", text='', icon='%s' % ('LAMP_' + cobj.data.type) ,  icon_only=True, emboss=False)
+
+				#---Search list for the target object
+					row.prop_search(cobj, "objtarget", scene, "objects")
+					col = box.column(align=True)
+					row = col.row(align=True)
+
+					if cobj.typlight != "Sky" : 
+						if cobj.typlight == "Panel":
+							row.prop(cobj, "reflector", text='Reflector', toggle=True)
+							row = col.row(align=True)
+							row.prop(cobj.data.materials['Mat_'+cobj.data.name].cycles, "sample_as_light", text='MIS', toggle=True)
 						else:
-							if cobj.typlight == "Pencil":
-								row.prop(cobj, "show", text='', icon='%s' % 'GREASEPENCIL',	 icon_only=True, emboss=False)
-							else: 
-								row.prop(cobj, "show", text='', icon='%s' % 'OUTLINER_OB_LATTICE',	icon_only=True, emboss=False)
+							row.prop(cobj.data.cycles, "use_multiple_importance_sampling", text='MIS', toggle=True)
+							row.prop(cobj.data.cycles, "cast_shadow", text='Shadows', toggle=True)
 						
-					else:
-						row.prop(cobj, "show", icon='%s' % 'OUTLINER_OB_LAMP' if cobj.show else 'LAMP', text='', emboss=False, translate=False)
-					row.alert = False
+						row.prop(cobj.cycles_visibility, "diffuse", text='Diff', toggle=True)
+						row.prop(cobj.cycles_visibility, "glossy", text='Spec', toggle=True)
 					
-					if not cobj.gradient: 
-						split = row.split(0.8, align=True)
-					else :
-						split = row
-						
-					if bpy.context.active_object== cobj: split.alert = True
-					split.prop(cobj, "name", text='')
-					split.alert = False
-
-					if not cobj.gradient: 
-						split.prop(cobj, "lightcolor")
-					else: 
-						split.label(text="",icon='COLOR')
-
-					if cobj.expanded:
-						row = box.row(align=True)
-
-					#---Search list for the target object
-						row.prop_search(cobj, "objtarget", scene, "objects")
+					if not cobj.reflector :
+					#---Energy / Smooth
 						col = box.column(align=True)
 						row = col.row(align=True)
+						if cobj.typlight != "Sky":
 
-						if cobj.typlight != "Sky" : 
-							if cobj.typlight == "Panel":
-								row.prop(cobj, "reflector", text='Reflector', toggle=True)
+							if cobj.typlight != "Sun":
+							#---Falloff
 								row = col.row(align=True)
-								row.prop(cobj.data.materials['Mat_'+cobj.data.name].cycles, "sample_as_light", text='MIS', toggle=True)
-							else:
-								row.prop(cobj.data.cycles, "use_multiple_importance_sampling", text='MIS', toggle=True)
-								row.prop(cobj.data.cycles, "cast_shadow", text='Shadows', toggle=True)
-							row.prop(cobj.cycles_visibility, "diffuse", text='Diff', toggle=True)
-							row.prop(cobj.cycles_visibility, "glossy", text='Spec', toggle=True)
-						
-						if not cobj.reflector :
-						#---Energy / Smooth
-							col = box.column(align=True)
+								split = row.split(0.6, align=True)
+								split.prop(cobj, "typfalloff") 
+								
+							#---Smooth
+								split.prop(cobj, "smooth")
+
+						else:
 							row = col.row(align=True)
-							row.prop(cobj, "energy")
-							if cobj.typlight != "Sky":
-
-								if cobj.typlight != "Sun":
-								#---Falloff
-									row = col.row(align=True)
-									split = row.split(0.6, align=True)
-									split.prop(cobj, "typfalloff") 
-									
-								#---Smooth
-									split.prop(cobj, "smooth")
-
+							row.prop(cobj, "skynode", text="World node", icon="BLANK1")
+						col = box.column(align=True)
+						row = col.row(align=True)
+					#---Gradient
+						if cobj.typlight in ("Panel", "Pencil", "Area"):
+						 
+							if not cobj.gradient:
+								row.operator("object.add_gradient", icon='BLANK1').act_light = cobj.name
 							else:
+								row.prop(cobj, "gradient", text='Gradient type :', toggle=True)
 								row = col.row(align=True)
-								row.prop(cobj, "skynode", text="World node", icon="BLANK1")
-							col = box.column(align=True)
-							row = col.row(align=True)
-						#---Gradient
-							if cobj.typlight in ("Panel", "Pencil", "Area"):
-							 
-								if not cobj.gradient:
-
-									if cobj.expanded and cobj.show == False:
-										row.alert = True
-									row.operator("object.add_gradient", icon='BLANK1').act_light = cobj.name
-									row.alert = False
+								if cobj.typlight in ("Panel", "Pencil"): 
+									row.prop(cobj, "typgradient", text="")
+									colramp = cobj.data.materials['Mat_' + cobj.data.name].node_tree.nodes['ColorRamp']
 								else:
-									col = box.column(align=True)
-									row = col.row(align=True)
-									row.prop(cobj, "gradient", text='Gradient type :', icon='BLANK1')
-									row = box.row(align=True)
-									
-									if cobj.typlight in ("Panel", "Pencil"): 
-										row.prop(cobj, "typgradient", text="")
-										colramp = cobj.data.materials['Mat_' + cobj.data.name].node_tree.nodes['ColorRamp']
-									else:
-										colramp = cobj.data.node_tree.nodes['ColorRamp']
-								   
-									box.template_color_ramp(colramp, "color_ramp", expand=True)
-									
-							col = box.column(align=True)
-							row = col.row(align=True)						
-							if not cobj.gradient and cobj.typlight != "Sky":
-								if cobj.typlight in ("Panel", "Pencil"):
-									row = col.row(align=True)
-									if cobj.filepath == "" and cobj.unlink == False:
-										row.prop(cobj, "filepath")
-									else:
-										row.prop(cobj, "unlink", icon='ZOOMOUT')
-										row.prop(cobj, "filepath")
+									colramp = cobj.data.node_tree.nodes['ColorRamp']
+
+								box.template_color_ramp(colramp, "color_ramp", expand=True)
+								
+						col = box.column(align=True)
+						row = col.row(align=True)						
+						if not cobj.gradient and cobj.typlight != "Sky":
+							if cobj.typlight in ("Panel", "Pencil"):
+								row = col.row(align=True)
+								if cobj.filepath == "" and cobj.unlink == False:
+									row.prop(cobj, "filepath")
+								else:
+									row.prop(cobj, "unlink", icon='ZOOMOUT')
+									row.prop(cobj, "filepath")
 
 #########################################################################################################
 
@@ -2305,12 +2394,11 @@ class LumierePreferences(bpy.types.Panel):
 
 def register():
 	bpy.utils.register_module(__name__)
-	bpy.types.Object.prop_group = PointerProperty(type=Group)
 	update_panel(None, bpy.context)
 	
 def unregister():
 	bpy.utils.unregister_module(__name__)	
-	del bpy.types.Object.prop_group
+
 	
 if __name__ == "__main__":
 	register()
