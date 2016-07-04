@@ -1,6 +1,6 @@
 # Lumiere
 
-## Interactive Lightning add-on for Blender 
+## Interactive Lighting add-on for Blender 
 Wiki : https://github.com/clarkx/Lumiere/wiki
 
 Changelog :
