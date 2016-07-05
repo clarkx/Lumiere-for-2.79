@@ -4,6 +4,11 @@
 Wiki : https://github.com/clarkx/Lumiere/wiki
 
 Changelog :
+Ver 0.71 :
+- Update constraints :
+  - An empty was created with each light for the contraints ("G" : Orbit mode), which was painful to delete. No more empty !
+
+****
 Ver 0.70 :
 - Update UI :
   - Add a selection widget. The switch turns red to show you what light was selected.
