@@ -21,7 +21,7 @@
 bl_info = {
 	"name": "Lumiere",
 	"author": "Cédric Brandin, Nathan Craddock",
-	"version": (0, 0, 70),
+	"version": (0, 0, 71),
 	"blender": (2, 76, 3),
 	"location": "View3D",
 	"description": "Interactive Lighting Add-on",
@@ -352,32 +352,23 @@ def get_mat_name(light):
 #########################################################################################################
 
 #########################################################################################################			
-def create_empty(self, context, name):
-	empty = bpy.data.objects.new(name = name + "_Empty", object_data = None)
-	context.scene.objects.link(empty)
+
+def add_constraint(self, context, name):
 	context.active_object.data.name = name
 	light = context.object
-	empty.empty_draw_type = "SPHERE"
-	empty.empty_draw_size = 0.00001
-	empty.location = light['hit']
-	light_constraint = light.constraints.new(type='TRACK_TO')
-	light_constraint.target = context.scene.objects.get(empty.name)
-	light_constraint.up_axis = "UP_Y"
-	light_constraint.track_axis = "TRACK_NEGATIVE_Z"
-	light_constraint.influence = 0
+	#light.constraints.new(type='TRACK_TO')
+	light.constraints['Track To'].target = context.scene.objects.get(light.parent.name) 
+	light.constraints['Track To'].up_axis = "UP_Y"
+	light.constraints['Track To'].track_axis = "TRACK_NEGATIVE_Z"
+	light.constraints['Track To'].influence = 0
 
 	obj = bpy.data.objects
 
-#---Parent the empty to the target object
-	target = obj[self.target_name]
-	empty.parent = target
-	empty.matrix_parent_inverse = target.matrix_world.inverted()
-	
 #---Parent the light to the target object
+	target = obj[self.target_name]
 	light.parent = target
 	light.matrix_parent_inverse = target.matrix_world.inverted()
-
-	return empty			 
+			 
 
 #########################################################################################################
 
@@ -395,14 +386,11 @@ class RemoveLight(bpy.types.Operator):
 
 	def execute(self, context):
 		light = context.active_object
-		empty = bpy.context.scene.objects[light.data.name + "_Empty"]
 		
 	#---Remove light	
 		context.scene.objects.active = light
 		bpy.ops.object.delete() 
-	#---Remove empty
-		bpy.data.objects[empty.name].select = True
-		bpy.ops.object.delete()
+
 		return {"FINISHED"}
 
 
@@ -417,11 +405,7 @@ def raycast_light(self, distance, context, event, coord, ray_max=1000.0):
 	self.region = context.region	
 	length_squared = 0
 	light = context.active_object
-	empty_name = light.data.name + "_Empty"
 
-	if bpy.data.objects.get(empty_name) is not None:
-		empty = context.scene.objects[empty_name]
-		light.constraints['Track To'].influence = 0
 
 #---Get the ray from the viewport and mouse
 	view_vector = view3d_utils.region_2d_to_vector_3d(self.region, self.rv3d, (coord))
@@ -492,6 +476,7 @@ def raycast_light(self, distance, context, event, coord, ray_max=1000.0):
 				self.target_name = obj.name
 			#---Parent the light to the target object
 				light.parent = obj
+				light.constraints['Track To'].target = obj
 				light.matrix_parent_inverse = obj.matrix_world.inverted()		
 				
 #---Define location, rotation and scale
@@ -499,9 +484,6 @@ def raycast_light(self, distance, context, event, coord, ray_max=1000.0):
 		rotaxis = (self.direction.to_track_quat('Z','Y'))	   
 		light['hit'] = (self.matrix * self.hit)
 		light['dir'] = self.direction
-
-		if bpy.data.objects.get(empty_name) is not None:
-			empty.location = light['hit']
 
 	#---Rotation	
 		light.rotation_euler = rotaxis.to_euler()
@@ -1572,8 +1554,10 @@ class AddLight(bpy.types.Operator):
 							obj_light = create_light_sky() 
 							obj_light.energy = 2				   
 						light_energy(obj_light)
+						obj_light.constraints.new(type='TRACK_TO')
 						raycast_light(self, obj_light.range, context, event, coord)
-						empty = create_empty(self, context, obj_light.data.name)
+						add_constraint(self, context, obj_light.data.name)
+
 			else:
 				return {'PASS_THROUGH'}
 			
