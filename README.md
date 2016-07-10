@@ -3,6 +3,15 @@
 ## Interactive Lighting add-on for Blender 
 Wiki : https://github.com/clarkx/Lumiere/wiki
 
+## Installation :
+- Click on the script "Lumiere_beta.py",
+- Click on the "RAW" button to see the script in your web browser,
+- Right Click "Save as...", to save the script with the ".py" extension on your computer (ie: "Lumiere_beta.py")
+- In the blender preferences, click on the "Add-ons" tab then on "Install from file..." to open the file browser,
+- Select the file you just have save "Lumiere_beta.py" to finish the installation.
+- A new tab "Lumiere" should appear.
+
+
 Changelog :
 Ver 0.71 :
 - Update constraints :
