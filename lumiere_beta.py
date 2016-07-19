@@ -562,6 +562,7 @@ def emit_plan_mat():
 
 #---Transparent Node
 	trans = mat.node_tree.nodes.new(type="ShaderNodeBsdfTransparent")
+	mat.node_tree.nodes["Transparent BSDF"].inputs[0].default_value = (0,0,0,1)
 	trans.location = (-200,-25) 
 
 #---Emission Node
