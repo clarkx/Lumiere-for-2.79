@@ -13,6 +13,12 @@ Wiki : https://github.com/clarkx/Lumiere/wiki
 
 
 Changelog :
+Ver 0.72 :
+- All modal :
+  - No need to press the key all the time. Exemple : Press [S] one time to scale the light, press [S] a second time or [LMB] to exit the modal mode.
+  - Bugfix : Creating light during the edit mode was buggy / Use the image texture template.
+
+****
 Ver 0.71 :
 - Update constraints :
   - An empty was created with each light for the contraints ("G" : Orbit mode), which was painful to delete. No more empty !
