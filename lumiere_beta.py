@@ -21,7 +21,7 @@
 bl_info = {
 	"name": "Lumiere",
 	"author": "Cédric Brandin, Nathan Craddock",
-	"version": (0, 0, 71),
+	"version": (0, 0, 72),
 	"blender": (2, 76, 3),
 	"location": "View3D",
 	"description": "Interactive Lighting Add-on",
@@ -184,17 +184,17 @@ def draw_text(color, font_id, left, height, text):
 	blf.draw(font_id, text)
 	blf.disable(font_id,blf.SHADOW)
 
-def draw_line(x, y, color, width):
+def draw_line(x, y, color, width, text_width):
 	bgl.glLineWidth(width)
 	bgl.glColor4f(*color)
 	bgl.glEnable(bgl.GL_BLEND)
 	bgl.glBegin(bgl.GL_LINES)
 	bgl.glVertex2f(x, y)
-	bgl.glVertex2f(x+250, y)
+	bgl.glVertex2f(x+text_width, y)
 	bgl.glEnd()
 	bgl.glLineWidth(1)
 	
-def draw_callback_px(self, context):
+def draw_callback_px(self, context, event):
 	txt_add_light = "Add light: CTRL+LMB"
 	txt_normal = "Normal"
 	txt_view = "View"
@@ -202,7 +202,16 @@ def draw_callback_px(self, context):
 	lw = 4 // 2
 	hudcol = context.scene.HUD_color[0], context.scene.HUD_color[1], context.scene.HUD_color[2], context.scene.HUD_color[3]
 	bgl.glColor4f(*hudcol)
-	
+	left = 20
+
+#---Region overlap on
+	overlap = bpy.context.user_preferences.system.use_region_overlap
+	t_panel_width = 0
+	if overlap:
+		for region in bpy.context.area.regions:
+			if region.type == 'TOOLS':
+				left += region.width
+				
 #---Draw frame around the view3D
 	bgl.glEnable(bgl.GL_BLEND)
 	bgl.glLineWidth(4)
@@ -218,16 +227,17 @@ def draw_callback_px(self, context):
 	font_id = 0	 
 	blf.size(font_id, 20, 72)
 
-	if not self.create_light and not self.editmode:
-		draw_text(hudcol, font_id, 20, region.height-55, txt_add_light)	
+#---Create light mode
+	if not self.editmode:
+		draw_text(hudcol, font_id, left, region.height-55, txt_add_light)	
 
 #---Interactive mode
 	else:
 	#---Reflection mode
 		if self.normal:
-			draw_text(hudcol, font_id, 20, region.height-55, txt_normal)
+			ref_mode = txt_normal
 		else:
-			draw_text(hudcol, font_id, 20, region.height-55, txt_view)
+			ref_mode = txt_view
 
 		obj_light = context.active_object
 	#---Interactive mode	
@@ -235,72 +245,67 @@ def draw_callback_px(self, context):
 			
 		#---Light Name
 			txt_light_name = "| Light: " + obj_light.name
-			draw_text(hudcol, font_id, 90, region.height-55, txt_light_name)
+			txt_to_draw = ref_mode + txt_light_name
+			draw_text(hudcol, font_id, left, region.height-55, txt_to_draw)
 
 		#---Draw a line
-			draw_line(20, region.height-62, hudcol, 2)
+			text_width, text_height = blf.dimensions(font_id, txt_to_draw)
+			draw_line(left, region.height-62, hudcol, 2, text_width)
 			
 		#---Keys 
-			key_left = 20
 			key_height = region.height-82
 			
-			if self.strength_mode:
+			if self.strength_light:
 				txt_strength = "Energy: " + str(round(obj_light.energy,2))
-				draw_text(hudcol, font_id, key_left, key_height, txt_strength)
+				draw_text(hudcol, font_id, left, key_height, txt_strength)
 
-			elif self.orbit_mode:
-				if (time.time() < (self.key_start + 0.8)):
-					txt_orbit = "Orbit mode"
-					draw_text(hudcol, font_id, key_left, key_height, txt_orbit)
-				else:
-					self.orbit_mode = False
-				
+			elif self.orbit:
+				txt_orbit = "Orbit mode"
+				draw_text(hudcol, font_id, left, key_height, txt_orbit)
+
 			elif self.dist_light:
 				txt_range = "Range: " + str(round(obj_light.range,2))
-				draw_text(hudcol, font_id, key_left, key_height, txt_range)
+				draw_text(hudcol, font_id, left, key_height, txt_range)
 				
 			elif self.rotate_light_z:
 				txt_rotation = "Rotation: " + str(round(math.degrees(obj_light.rotation_euler.z),2))
-				draw_text(hudcol, font_id, key_left, key_height, txt_rotation)
+				draw_text(hudcol, font_id, left, key_height, txt_rotation)
 			
 			elif self.falloff_mode :
 				if (time.time() < (self.key_start + 0.5)):
 					if obj_light.typfalloff == "0":
-						draw_text(hudcol, font_id, key_left, key_height, "Quadratic Falloff")
+						draw_text(hudcol, font_id, left, key_height, "Quadratic Falloff")
 					elif obj_light.typfalloff == "1":
-						draw_text(hudcol, font_id, key_left, key_height, "Linear Falloff")
+						draw_text(hudcol, font_id, left, key_height, "Linear Falloff")
 					elif obj_light.typfalloff == "2":
-						draw_text(hudcol, font_id, key_left, key_height, "Constant Falloff")
+						draw_text(hudcol, font_id, left, key_height, "Constant Falloff")
 				else:
 					self.falloff_mode = False
 			
-			elif self.scale_mode:
+			elif self.scale_light:
 				if obj_light.typlight == "Spot" :
 					txt_scale = "Size: " + str(round(math.degrees(bpy.data.lamps[obj_light.data.name].spot_size),2))
 				elif obj_light.typlight in ("Point", "Sun") :
 					txt_scale = "Size: " + str(round(bpy.data.lamps[obj_light.data.name].shadow_soft_size,2))
 				else:
-					scale_degree = (self.scale_after * 100) / self.scale_before
-					txt_scale = "Scale: " + str(round(scale_degree,2))
-				draw_text(hudcol, font_id, key_left, key_height, txt_scale)
+					txt_scale = "Scale: " + str(round(obj_light.scale[0], 2))
+				draw_text(hudcol, font_id, left, key_height, txt_scale)
 			
-			elif self.scale_mode_x:
+			elif self.scale_light_x:
 				if obj_light.typlight == "Spot" :
 					txt_scale = "Shadow size: " + str(round(bpy.data.lamps[obj_light.data.name].shadow_soft_size,2))
-					draw_text(hudcol, font_id, key_left, key_height, txt_scale)
+					draw_text(hudcol, font_id, left, key_height, txt_scale)
 				elif obj_light.typlight in ("Panel", "Area"):
-					scale_degree = (self.scale_after * 100) / self.scale_before
-					txt_scale = "Scale X: " + str(round(scale_degree,2))
-					draw_text(hudcol, font_id, key_left, key_height, txt_scale)
+					txt_scale = "Scale X: " + str(round(obj_light.scale[0], 2))
+					draw_text(hudcol, font_id, left, key_height, txt_scale)
 
-			elif self.scale_mode_y:
+			elif self.scale_light_y:
 				if obj_light.typlight == "Spot" :
 					txt_scale = "Blend: " + str(round(bpy.data.lamps[obj_light.data.name].spot_blend,2))
-					draw_text(hudcol, font_id, key_left, key_height, txt_scale)
+					draw_text(hudcol, font_id, left, key_height, txt_scale)
 				elif obj_light.typlight in ("Panel", "Area"):
-					scale_degree = (self.scale_after * 100) / self.scale_before
-					txt_scale = "Scale Y: " + str(round(scale_degree,2))
-					draw_text(hudcol, font_id, key_left, key_height, txt_scale)
+					txt_scale = "Scale Y: " + str(round(obj_light.scale[1], 2))
+					draw_text(hudcol, font_id, left, key_height, txt_scale)
 				
 #---Restore opengl defaults
 	bgl.glLineWidth(1)
@@ -332,44 +337,92 @@ def edit_callback_px(self, context):
 	bgl.glLineWidth(1)
 	bgl.glDisable(bgl.GL_BLEND)
 	bgl.glColor4f(0.0, 0.0, 0.0, 1.0)
-	
-#########################################################################################################
-
-#########################################################################################################
-def get_enum_items(self, context):
-	light_names = [obj for obj in bpy.context.scene.objects if obj.data.name.startswith("Lumi")]
-	return [(ln, ln, "") for ln in light_names]
 
 #########################################################################################################
 
 #########################################################################################################
 def get_mat_name(light):
+	"""
+	Return the name of the material of the light
+	"""
 	mat_name = "Mat_" + light
 	mat = bpy.data.materials.get(mat_name)
 	
 	return(mat_name, mat)
+	
+#########################################################################################################
+
+#########################################################################################################			
+def create_empty(self, context, name):
+	"""
+	Create an empty at the hit point for the orbit mode
+	"""
+	empty = bpy.data.objects.new(name = name + "_Empty", object_data = None)
+	context.scene.objects.link(empty)
+	context.active_object.data.name = name
+	light = context.object
+	empty.empty_draw_type = "SPHERE"
+	empty.empty_draw_size = 0.00001
+	empty.location = light['hit']
+
+	return empty	
 
 #########################################################################################################
 
 #########################################################################################################			
-
-def add_constraint(self, context, name):
+def target_constraint(self, context, name):
+	"""
+	Add an empty on the target point to constraint the orbit mode
+	"""
+	obj_light = context.object
+	empty = bpy.data.objects.new(name = name + "_Empty", object_data = None)
+	context.scene.objects.link(empty)
 	context.active_object.data.name = name
-	light = context.object
-	#light.constraints.new(type='TRACK_TO')
-	light.constraints['Track To'].target = context.scene.objects.get(light.parent.name) 
-	light.constraints['Track To'].up_axis = "UP_Y"
-	light.constraints['Track To'].track_axis = "TRACK_NEGATIVE_Z"
-	light.constraints['Track To'].influence = 0
+	empty.empty_draw_type = "SPHERE"
+	empty.empty_draw_size = 0.00001
+	empty.location = obj_light['hit']
+	obj_light.constraints['Track To'].target = context.scene.objects.get(empty.name)
+	obj_light.constraints['Track To'].up_axis = "UP_Y"
+	obj_light.constraints['Track To'].track_axis = "TRACK_NEGATIVE_Z"	
+	obj_light.constraints['Track To'].influence = 1
 
-	obj = bpy.data.objects
+#########################################################################################################
 
-#---Parent the light to the target object
-	target = obj[self.target_name]
-	light.parent = target
-	light.matrix_parent_inverse = target.matrix_world.inverted()
-			 
+#########################################################################################################			
+def remove_constraint(self, context, name):
+	"""
+	Remove the empty and the constraint of the object for the orbit mode
+	"""
+	obj_light = context.object
+	bpy.ops.object.visual_transform_apply()
+	empty = context.scene.objects.get(name + "_Empty") 
+	obj_light.constraints['Track To'].influence = 0
+	target = bpy.data.objects[obj_light.parent.name]
+	obj_light['dir'] = (obj_light.location - empty.location) * target.matrix_local.inverted()
+	context.scene.objects.unlink(empty)
+	bpy.data.objects.remove(empty)
 
+#########################################################################################################
+
+#########################################################################################################			
+def update_constraint(self, context, event, name):
+	"""
+	Update the object properties for the orbit mode
+	"""
+	obj_light = context.object
+	empty = context.scene.objects.get(name + "_Empty") 
+	v3d = context.space_data
+	rv3d = v3d.region_3d
+	v_m = context.area.spaces[0].region_3d.view_matrix
+	self.offset = -(self.initial_mouse - Vector((event.mouse_x, event.mouse_y, 0.0))) * 0.02
+	obj_light.location = self.initial_location + Vector(self.offset)*v_m
+#---Source: http://blender.stackexchange.com/questions/21259/is-possible-to-calculate-the-shortest-distance-between-two-geometry-objects-via	
+	lst = [] 
+	lst.append(obj_light.location)
+	lst.append(empty.location)
+	distance = math.sqrt((lst[0][0] - lst[1][0])**2 + (lst[0][1] - lst[1][1])**2 + (lst[0][2] - lst[1][2])**2)
+	obj_light.range	= distance
+	
 #########################################################################################################
 
 #########################################################################################################			
@@ -393,7 +446,6 @@ class RemoveLight(bpy.types.Operator):
 
 		return {"FINISHED"}
 
-
 #########################################################################################################
 
 #########################################################################################################
@@ -405,7 +457,6 @@ def raycast_light(self, distance, context, event, coord, ray_max=1000.0):
 	self.region = context.region	
 	length_squared = 0
 	light = context.active_object
-
 
 #---Get the ray from the viewport and mouse
 	view_vector = view3d_utils.region_2d_to_vector_3d(self.region, self.rv3d, (coord))
@@ -476,7 +527,6 @@ def raycast_light(self, distance, context, event, coord, ray_max=1000.0):
 				self.target_name = obj.name
 			#---Parent the light to the target object
 				light.parent = obj
-				light.constraints['Track To'].target = obj
 				light.matrix_parent_inverse = obj.matrix_world.inverted()		
 				
 #---Define location, rotation and scale
@@ -623,12 +673,6 @@ def light_energy(cobj):
 	if cobj.typlight in ("Panel", "Pencil"):
 
 		mat_name, mat = get_mat_name(cobj.data.name)
-#	#---If the object is a copy, need to copy the material and rename it		
-#		obj_mat = cobj.material_slots[0].name
-#		if mat_name != obj_mat:
-#			new_material = bpy.data.materials[obj_mat].copy()
-#			new_material.name = mat_name
-#			bpy.data.objects[cobj.name].active_material = new_material
 			
 		node_falloff = mat.node_tree.nodes["Light Falloff"]
 		node_falloff.inputs[0].default_value = cobj.energy
@@ -1130,7 +1174,9 @@ def create_light_sky():
 
 #########################################################################################################
 class AddLight(bpy.types.Operator):
-	"""Create a new light"""
+	"""
+	Create a new light or update the selected one
+	"""
 	bl_idname = "object.add_light"
 	bl_label = "Add Light"
 	bl_options = {'UNDO', 'GRAB_CURSOR'}
@@ -1144,318 +1190,9 @@ class AddLight(bpy.types.Operator):
 	editmode = bpy.props.BoolProperty(default=False)
 	custom = bpy.props.BoolProperty()
 	act_light = bpy.props.StringProperty()
+	offset = FloatVectorProperty(name="Offset", size=3,)
 	#-------------------------------------------------------------------
 	
-	def transform_light(self, context, event, obj_light):
-
-	#---Start the modifications
-		if self.doPick and not self.lmb:
-			if event.type == 'MOUSEMOVE' :
-				self.click_pos=[event.mouse_region_x,event.mouse_region_y]
-				if event.value == 'PRESS':
-					bpy.context.window.cursor_modal_set("SCROLL_X")
-				#---range : 
-					if self.dist_light:
-						self.modif = True
-						delta = event.mouse_x - self.first_mouse_x
-						obj_light.range += delta * 0.2
-						# New raycast if no hit has been found
-						if not hasattr(self, "hit"):
-							hit_world = Vector(obj_light['hit']) + (obj_light.range * Vector(obj_light['dir']))
-						else:
-							hit_world = (self.matrix * self.hit) + (obj_light.range * Vector(obj_light['dir']))
-						obj_light.location = hit_world[0], hit_world[1], hit_world[2]
-						self.dist_light = False
-
-				#---Scale on X and Y axis
-					elif self.scale_light:
-						self.modif = True
-						self.scale_mode = True
-						delta = event.mouse_x - self.first_mouse_x
-						
-						if obj_light.typlight in ("Panel", "Pencil"):
-							obj_light.scale[0] += delta*.1
-							obj_light.scale[1] += delta*.1
-							self.scale_after = obj_light.scale[0]
-						elif obj_light.typlight == "Spot":
-							lamp = obj_light.data
-							lamp.spot_size += delta * .05
-							self.scale_after = lamp.spot_size
-						elif obj_light.typlight in ("Point", "Sun") :
-							lamp = obj_light.data
-							lamp.shadow_soft_size += delta * .05
-							self.scale_after = lamp.shadow_soft_size
-						elif obj_light.typlight =="Sky" :
-							lamp = obj_light.data
-							lamp.shadow_soft_size += delta * .002
-							self.scale_after = lamp.shadow_soft_size
-						#---Stick to the maximum of turbidity in the Sky texture
-							if lamp.shadow_soft_size > 0.1:
-								lamp.shadow_soft_size = 0.1
-							bpy.data.worlds['World'].node_tree.nodes["Sky Texture"].turbidity += delta * .05
-						elif obj_light.typlight == "Area":
-							lamp = obj_light.data
-							lamp.size += delta * .05
-							lamp.size_y += delta * .05
-							self.scale_after = lamp.size
-						self.scale_light = False
-
-				#---Scale on X - Only for panel type
-					elif self.scale_light_x:
-						self.modif = True
-						self.scale_mode_x = True
-						delta = event.mouse_x - self.first_mouse_x
-						if obj_light.typlight == "Panel":
-							if obj_light.shape == "Star": 
-								obj_light.xtrnrad += delta*.1
-								self.scale_after = obj_light.xtrnrad
-							else:
-								obj_light.scale[0] += delta*.1
-								self.scale_after = obj_light.scale[0]
-						elif obj_light.typlight == "Area":
-							lamp = obj_light.data
-							lamp.size += delta * .05
-							self.scale_after = lamp.size
-						elif obj_light.typlight == "Spot" :
-							lamp = obj_light.data
-							lamp.shadow_soft_size += delta * .05
-							self.scale_after = lamp.shadow_soft_size
-							
-						self.scale_light_x = False
-						
-				#---Scale on Y - Only for panel type
-					elif self.scale_light_y:
-						self.modif = True
-						self.scale_mode_y = True
-						delta = event.mouse_x - self.first_mouse_x
-						if obj_light.typlight == "Panel":
-							if obj_light.shape == "Star": 
-								obj_light.itrnrad += delta*.1
-								self.scale_after = obj_light.itrnrad
-							else:
-							   obj_light.scale[1] += delta*.1
-							   self.scale_after = obj_light.scale[1]
-						elif obj_light.typlight == "Area":
-							lamp = obj_light.data
-							lamp.size_y += delta * .05
-							self.scale_after = lamp.size_y 
-						elif obj_light.typlight == "Spot" :
-							lamp = obj_light.data
-							lamp.spot_blend += delta * .05	
-							self.scale_after = lamp.spot_blend					
-							
-						self.scale_light_y = False
-												
-				#---Scale Gap Y - Only for the Grid shape
-					elif self.scale_gapy:
-						self.modif = True
-						delta = event.mouse_x - self.first_mouse_x
-						obj_light.gapy += delta*.1
-
-				#---Scale Gap X - Only for the Grid shape
-					elif self.scale_gapx:
-						self.modif = True
-						delta = event.mouse_x - self.first_mouse_x					  
-						obj_light.gapx += delta*.1
-
-				#---Rotate 'Z' axis
-					elif self.rotate_light_z:
-						self.modif = True
-						delta = event.mouse_x - self.first_mouse_x 
-						lightMatrix = obj_light.matrix_world
-						rotaxis = (lightMatrix[0][2], lightMatrix[1][2], lightMatrix[2][2])
-						rot_mat = Matrix.Rotation(math.radians(delta), 4, rotaxis)
-						loc, rot, scale = obj_light.matrix_world.decompose()
-						smat = Matrix()
-						for i in range(3):
-							smat[i][i] = scale[i]
-						mat = Matrix.Translation(loc) * rot_mat * rot.to_matrix().to_4x4() * smat
-						obj_light.matrix_world = mat
-						self.rotz = delta
-					
-				#---Energy
-					elif self.strength_light:
-						self.modif = True
-						self.strength_mode = True
-						delta = event.mouse_x - self.first_mouse_x
-						if obj_light.typlight in ("Panel", "Sun"):
-							obj_light.energy += delta * 0.1
-						elif obj_light.typlight =="Sky" :
-							obj_light.energy += delta * 0.02
-						else:
-							obj_light.energy += delta * 2
-						#light_energy(obj_light)
-						self.strength_light = False				
-
-					else:
-						return {'PASS_THROUGH'}
-			#---Release ; Restore the default cursor
-				else:
-					bpy.context.window.cursor_modal_set("DEFAULT")
-
-			#---End of the modifications
-				if event.value == 'RELEASE':
-					bpy.context.window.cursor_modal_set("DEFAULT")
-					self.modif = False
-		#---Orbit mode
-			elif self.orbit:
-				self.modif = True
-				obj_light.constraints['Track To'].influence = 1
-				bpy.ops.transform.translate('INVOKE_DEFAULT')
-				self.orbit = False
-		
-	#---Begin Interactive
-		if event.value == 'PRESS' and self.doPick :
-		#---Distance of the light from the object
-			if (getattr(event, context.scene.Key_Distance)):
-				self.first_mouse_x = event.mouse_x
-				self.dist_light = True
-				
-		#---Strength of the light 
-			elif event.type == context.scene.Key_Strength:
-				self.first_mouse_x = event.mouse_x
-				self.strength_light = True
-	
-		#---Gap of the Grid on Y or X
-			elif (getattr(event, context.scene.Key_Gap)):
-				if obj_light.shape == "Rectangular":
-					if event.type == context.scene.Key_Scale_Y:
-						self.first_mouse_x = event.mouse_x
-						self.scale_gapy = True
-					elif event.type == context.scene.Key_Scale_X:
-						self.first_mouse_x = event.mouse_x
-						self.scale_gapx = True
-
-		#---Scale the light
-			elif event.type == context.scene.Key_Scale :
-				self.first_mouse_x = event.mouse_x
-				self.scale_light = True
-			#---HUD 
-				if obj_light.typlight in ("Panel", "Pencil"):
-					if self.scale_before == 0 : self.scale_before = obj_light.scale[0]
-				elif obj_light.typlight in ("Point", "Sun", "Spot") :
-					lamp = obj_light.data
-					if self.scale_before == 0 : self.scale_before = lamp.shadow_soft_size 
-				elif obj_light.typlight =="Sky" :
-					lamp = obj_light.data
-					if self.scale_before == 0 : self.scale_before = lamp.shadow_soft_size
-					if lamp.shadow_soft_size > 0.1:
-						lamp.shadow_soft_size = 0.1
-				elif obj_light.typlight == "Area":
-					lamp = obj_light.data
-					if self.scale_before == 0 : self.scale_before = lamp.size				
-
-		#---Scale the light on X axis
-			elif event.type == context.scene.Key_Scale_X:
-				self.first_mouse_x = event.mouse_x
-				self.scale_light_x = True
-			#---HUD
-				if obj_light.typlight == "Panel":
-					if obj_light.shape == "Star": 
-						if self.scale_before == 0 : self.scale_before = obj_light.xtrnrad
-					else:
-						if self.scale_before == 0 : self.scale_before = obj_light.scale[0]
-				elif obj_light.typlight == "Area":
-					lamp = obj_light.data
-					if self.scale_before == 0 : self.scale_before = lamp.size
-				elif obj_light.typlight == "Spot" :
-					lamp = obj_light.data
-					if self.scale_before == 0 : self.scale_before = lamp.spot_size
-
-		#---Scale the light on Y axis
-			elif event.type == context.scene.Key_Scale_Y:
-				self.first_mouse_x = event.mouse_x
-				self.scale_light_y = True
-			#---HUD
-				if obj_light.typlight == "Panel":
-					if obj_light.shape == "Star": 
-						if self.scale_before == 0 : self.scale_before = obj_light.itrnrad
-					else:
-						if self.scale_before == 0 : self.scale_before = obj_light.scale[1]
-				elif obj_light.typlight == "Area":
-					lamp = obj_light.data
-					if self.scale_before == 0 : self.scale_before = lamp.size_y
-				elif obj_light.typlight == "Spot" :
-					lamp = obj_light.data
-					if self.scale_before == 0 : self.scale_before = lamp.spot_blend
-
-				
-		#---Orbit mode
-			elif event.type == context.scene.Key_Orbit:
-				self.key_start = time.time()
-				self.orbit = True
-				self.orbit_mode = True
-				
-		#---Change the view based on the normal of the object
-			elif event.type == context.scene.Key_Normal:		
-				obj_light.normal = not obj_light.normal
-				self.normal = obj_light.normal
-
-		#---Rotate the light on the local 'Z' axis.
-			elif event.type == context.scene.Key_Rotate:			
-				self.first_mouse_x = event.mouse_x
-				self.rotate_light_z = True
-			
-		#---Type of Fallof
-			elif event.type == context.scene.Key_Falloff:
-				self.falloff_mode = True
-				self.key_start = time.time()
-				fallidx = int(obj_light.typfalloff)+1
-				if fallidx > 2:
-					fallidx = 0
-				obj_light.typfalloff = str(fallidx)
-
-		#---Add a side.
-			elif event.type == 'PAGE_UP' and obj_light.typlight == "Panel" and obj_light.shape != "Custom":
-					if obj_light.shape == "Star":
-						obj_light.nbside += 2
-					else:
-						obj_light.nbside += 1 
-
-		#---Remove a side.
-			elif event.type == 'PAGE_DOWN' and obj_light.typlight == "Panel" and obj_light.shape != "Custom":
-					if obj_light.shape == "Star":
-						obj_light.nbside -= 2
-						if obj_light.nbside < 12: obj_light.nbside = 12
-					else:
-						obj_light.nbside -= 1 
-						if obj_light.nbside < 3: obj_light.nbside = 3
-
-		#---Add a row.
-			elif event.type == 'UP_ARROW' and obj_light.typlight == "Panel" and obj_light.shape != "Star" and obj_light.shape != "Custom":
-				obj_light.nbrow += 1 
-
-		#---Remove a row.
-			elif event.type == 'DOWN_ARROW' and obj_light.typlight == "Panel" and obj_light.shape != "Star" and obj_light.shape != "Custom":
-				 obj_light.nbrow -= 1 
-				 if obj_light.nbrow < 1: obj_light.nbrow = 1
-				
-		#---Add a column.
-			elif event.type == 'RIGHT_ARROW' and obj_light.typlight == "Panel" and obj_light.shape != "Star" and obj_light.shape != "Custom":
-				obj_light.nbcol += 1 
- 
-		#---Remove a column.
-			elif event.type == 'LEFT_ARROW' and obj_light.typlight == "Panel" and obj_light.shape != "Star" and obj_light.shape != "Custom":
-				obj_light.nbcol -= 1 
-				if obj_light.nbcol < 1: obj_light.nbcol = 1				  
-		
-	#---End Interactive
-		if event.value == 'RELEASE' :
-			self.dist_light = False
-			self.strength_light = False
-			self.scale_light = False
-			self.scale_light_x = False
-			self.scale_light_y = False
-			self.scale_gapy = False
-			self.scale_gapx = False
-			self.rotate_light_z = False
-			self.orbit = False
-			self.strength_mode = False
-			self.scale_mode = False
-			self.scale_mode_x = False
-			self.scale_mode_y = False
-			self.scale_before = 0
-			
 	def check_region(self,context,event):
 		if context.area != None:
 			if context.area.type == "VIEW_3D":
@@ -1471,8 +1208,258 @@ class AddLight(bpy.types.Operator):
 					self.in_view_3d = False
 			else:
 				self.in_view_3d = False			
+	
+	def transform_light(self, context, event, obj_light):
+
+		if self.lmb and self.modif : 
+			self.dist_light = False
+			self.scale_light = False
+			self.scale_light_x = False
+			self.scale_light_y = False
+			self.rotate_light_z = False
+			self.strength_light = False	
+			self.scale_gapy = False
+			self.scale_gapx = False	
+			if self.orbit:
+				for c in obj_light.constraints:
+					if c.type=='TRACK_TO':
+						remove_constraint(self, context, obj_light.data.name)
+						self.orbit = False	
+			self.modif = False
+		
+	#---Start the modifications
+		if self.editmode and not self.lmb :
+			if event.type == 'MOUSEMOVE' :
+				self.click_pos=[event.mouse_region_x,event.mouse_region_y]
+				bpy.context.window.cursor_modal_set("SCROLL_X")
+				
+			#---range : 
+				if self.dist_light :
+					self.modif = True
+					delta = event.mouse_x - self.first_mouse_x
+					obj_light.range += delta * 0.1
+
+					# New raycast if no hit has been found
+					if not hasattr(self, "hit"):
+						hit_world = Vector(obj_light['hit']) + (obj_light.range * Vector(obj_light['dir']))
+					else:
+						hit_world = (self.matrix * self.hit) + (obj_light.range * Vector(obj_light['dir']))
+					obj_light.location = hit_world[0], hit_world[1], hit_world[2]					 
+					
+			#---Scale on X and Y axis
+				elif self.scale_light:
+					self.modif = True
+					delta = event.mouse_x - self.first_mouse_x
+					if obj_light.typlight in ("Panel", "Pencil"):
+						obj_light.scale[0] += delta*.1
+						obj_light.scale[1] += delta*.1
+					elif obj_light.typlight == "Spot":
+						lamp = obj_light.data
+						lamp.spot_size += delta * .05
+					elif obj_light.typlight in ("Point", "Sun") :
+						lamp = obj_light.data
+						lamp.shadow_soft_size += delta * .05
+					elif obj_light.typlight =="Sky" :
+						lamp = obj_light.data
+						lamp.shadow_soft_size += delta * .002
+					#---Stick to the maximum of turbidity in the Sky texture
+						if lamp.shadow_soft_size > 0.1:
+							lamp.shadow_soft_size = 0.1
+						bpy.data.worlds['World'].node_tree.nodes["Sky Texture"].turbidity += delta * .05
+					elif obj_light.typlight == "Area":
+						lamp = obj_light.data
+						lamp.size += delta * .05
+						lamp.size_y += delta * .05
+
+			#---Scale on X - Only for panel type
+				elif self.scale_light_x:
+					self.modif = True
+					delta = event.mouse_x - self.first_mouse_x
+					if obj_light.typlight == "Panel":
+						if obj_light.shape == "Star": 
+							obj_light.xtrnrad += delta*.1
+						else:
+							obj_light.scale[0] += delta*.1
+					elif obj_light.typlight == "Area":
+						lamp = obj_light.data
+						lamp.size += delta * .05
+					elif obj_light.typlight == "Spot" :
+						lamp = obj_light.data
+						lamp.shadow_soft_size += delta * .05
+					
+			#---Scale on Y - Only for panel type
+				elif self.scale_light_y:
+					self.modif = True
+					delta = event.mouse_x - self.first_mouse_x
+					if obj_light.typlight == "Panel":
+						if obj_light.shape == "Star": 
+							obj_light.itrnrad += delta*.1
+						else:
+						   obj_light.scale[1] += delta*.1
+					elif obj_light.typlight == "Area":
+						lamp = obj_light.data
+						lamp.size_y += delta * .05
+					elif obj_light.typlight == "Spot" :
+						lamp = obj_light.data
+						lamp.spot_blend += delta * .05	
+
+			#---Rotate 'Z' axis
+				elif self.rotate_light_z:
+					self.modif = True
+					delta = event.mouse_x - self.first_mouse_x 
+					lightMatrix = obj_light.matrix_world
+					rotaxis = (lightMatrix[0][2], lightMatrix[1][2], lightMatrix[2][2])
+					rot_mat = Matrix.Rotation(math.radians(delta), 4, rotaxis)
+					loc, rot, scale = obj_light.matrix_world.decompose()
+					smat = Matrix()
+					for i in range(3):
+						smat[i][i] = scale[i]
+					mat = Matrix.Translation(loc) * rot_mat * rot.to_matrix().to_4x4() * smat
+					obj_light.matrix_world = mat
+					self.rotz = delta
+				
+			#---Energy
+				elif self.strength_light:
+					self.modif = True
+					delta = event.mouse_x - self.first_mouse_x
+					if obj_light.typlight in ("Panel", "Sun"):
+						obj_light.energy += delta * 0.1
+					elif obj_light.typlight =="Sky" :
+						obj_light.energy += delta * 0.02
+					else:
+						obj_light.energy += delta * 2
+											
+			#---Scale Gap Y - Only for the Grid shape
+				elif self.scale_gapy:
+					self.modif = True
+					delta = event.mouse_x - self.first_mouse_x
+					obj_light.gapy += delta*.1
+
+			#---Scale Gap X - Only for the Grid shape
+				elif self.scale_gapx:
+					self.modif = True
+					delta = event.mouse_x - self.first_mouse_x					  
+					obj_light.gapx += delta*.1
+
+			#---Orbit mode
+				elif self.orbit:
+					self.modif = True
+					update_constraint(self, context, event, obj_light.data.name)
 
 
+				self.first_mouse_x = event.mouse_x
+
+			#---End of the modifications
+				if event.value == 'RELEASE':
+					bpy.context.window.cursor_modal_set("DEFAULT")
+				
+	#---Begin Interactive
+		if self.editmode :
+		#---Distance of the light from the object
+			if (getattr(event, context.scene.Key_Distance)):
+				self.first_mouse_x = event.mouse_x
+				self.dist_light = not self.dist_light
+				
+		#---Strength of the light 
+			elif event.type == context.scene.Key_Strength and event.value == 'PRESS':
+				self.first_mouse_x = event.mouse_x
+				self.strength_light = not self.strength_light
+	
+		#---Gap of the Grid on Y or X
+			elif (getattr(event, context.scene.Key_Gap)):
+				if obj_light.shape == "Rectangular":
+					if event.type == context.scene.Key_Scale_Y and event.value == 'PRESS':
+						self.first_mouse_x = event.mouse_x
+						self.scale_gapy = not self.scale_gapy
+					elif event.type == context.scene.Key_Scale_X and event.value == 'PRESS':
+						self.first_mouse_x = event.mouse_x
+						self.scale_gapx = not self.scale_gapx
+
+		#---Scale the light
+			elif event.type == context.scene.Key_Scale and event.value == 'PRESS':
+				self.first_mouse_x = event.mouse_x
+				self.scale_light = not self.scale_light
+
+		#---Scale the light on X axis
+			elif event.type == context.scene.Key_Scale_X and event.value == 'PRESS':
+				self.first_mouse_x = event.mouse_x
+				self.scale_light_x = not self.scale_light_x
+
+		#---Scale the light on Y axis
+			elif event.type == context.scene.Key_Scale_Y and event.value == 'PRESS':
+				self.first_mouse_x = event.mouse_x
+				self.scale_light_y = not self.scale_light_y
+
+		#---Orbit mode
+			elif event.type == context.scene.Key_Orbit and event.value == 'PRESS':
+				self.orbit = not self.orbit
+				if self.orbit:
+					self.initial_mouse = Vector((event.mouse_x, event.mouse_y, 0.0))
+					self.initial_location = obj_light.location.copy()
+					target_constraint(self, context, obj_light.data.name)
+				else:	
+					remove_constraint(self, context, obj_light.data.name)				
+				
+		#---Change the view based on the normal of the object
+			elif event.type == context.scene.Key_Normal and event.value == 'PRESS':
+				obj_light.normal = not obj_light.normal
+				self.normal = obj_light.normal
+
+		#---Rotate the light on the local 'Z' axis.
+			elif event.type == context.scene.Key_Rotate and event.value == 'PRESS':
+				self.first_mouse_x = event.mouse_x
+				self.rotate_light_z = not self.rotate_light_z
+			
+		#---Type of Fallof
+			elif event.type == context.scene.Key_Falloff and event.value == 'PRESS':
+				self.falloff_mode = True
+				self.key_start = time.time()
+				fallidx = int(obj_light.typfalloff)+1
+				if fallidx > 2:
+					fallidx = 0
+				obj_light.typfalloff = str(fallidx)
+
+		#---Add a side.
+			elif event.type == 'PAGE_UP' and event.value == 'PRESS':
+				if obj_light.typlight == "Panel" and obj_light.shape != "Custom":
+					if obj_light.shape == "Star":
+						obj_light.nbside += 2
+					else:
+						obj_light.nbside += 1 
+
+		#---Remove a side.
+			elif event.type == 'PAGE_DOWN' and event.value == 'PRESS':
+				if obj_light.typlight == "Panel" and obj_light.shape != "Custom":
+					if obj_light.shape == "Star":
+						obj_light.nbside -= 2
+						if obj_light.nbside < 12: obj_light.nbside = 12
+					else:
+						obj_light.nbside -= 1 
+						if obj_light.nbside < 3: obj_light.nbside = 3
+
+		#---Add a row.
+			elif event.type == 'UP_ARROW' and event.value == 'PRESS': 
+				if obj_light.typlight == "Panel" and obj_light.shape != "Star" and obj_light.shape != "Custom":
+					obj_light.nbrow += 1 
+
+		#---Remove a row.
+			elif event.type == 'DOWN_ARROW' and event.value == 'PRESS': 
+				if obj_light.typlight == "Panel" and obj_light.shape != "Star" and obj_light.shape != "Custom":
+					obj_light.nbrow -= 1 
+					if obj_light.nbrow < 1: obj_light.nbrow = 1
+				
+		#---Add a column.
+			elif event.type == 'RIGHT_ARROW' and event.value == 'PRESS': 
+				if obj_light.typlight == "Panel" and obj_light.shape != "Star" and obj_light.shape != "Custom":
+					obj_light.nbcol += 1 
+ 
+		#---Remove a column.
+			elif event.type == 'LEFT_ARROW'  and event.value == 'PRESS': 
+				if obj_light.typlight == "Panel" and obj_light.shape != "Star" and obj_light.shape != "Custom":
+					obj_light.nbcol -= 1 
+					if obj_light.nbcol < 1: obj_light.nbcol = 1				  
+
+			
 	def modal(self, context, event):
 		#-------------------------------------------------------------------
 		coord = (event.mouse_region_x, event.mouse_region_y)
@@ -1501,18 +1488,10 @@ class AddLight(bpy.types.Operator):
 					
 				if event.type == 'LEFTMOUSE':
 					self.lmb = event.value == 'PRESS'
-
-			#---RayCast the light
-				if self.doPick is True and self.modif is False : 
-					if self.lmb :
-						raycast_light(self, obj_light.range, context, event, coord)
-						bpy.context.window.cursor_modal_set("SCROLL_XY")
-					self.create_light = True
 					
 			#---Create Lights	  
-				if (event.ctrl) and event.type == 'LEFTMOUSE' and not self.editmode or self.custom:
-					if event.value == 'PRESS':
-						self.doPick = True
+				if (event.ctrl) and event.value == 'PRESS':
+					if event.type == 'LEFTMOUSE' and not self.custom:
 						self.dist_light = False
 						self.scale_gapy = False
 						self.scale_gapx = False
@@ -1522,7 +1501,6 @@ class AddLight(bpy.types.Operator):
 						self.strength_light = False
 						self.rotate_light_z = False
 						self.orbit = False
-						self.scale_before = self.scale_after = 0
 						
 					#---Define the different shape for the panel light
 						if context.scene.typlight == "Panel":
@@ -1557,24 +1535,30 @@ class AddLight(bpy.types.Operator):
 						light_energy(obj_light)
 						obj_light.constraints.new(type='TRACK_TO')
 						raycast_light(self, obj_light.range, context, event, coord)
-						add_constraint(self, context, obj_light.data.name)
+						self.editmode = True
 
+			#---RayCast the light
+				elif self.editmode is True and self.modif is False : 
+					if self.lmb :
+						raycast_light(self, obj_light.range, context, event, coord)
+						bpy.context.window.cursor_modal_set("SCROLL_XY")
+						
 			else:
 				return {'PASS_THROUGH'}
 			
 		#---Transform the light
-			if self.create_light :
-				editmode = False
+			if self.editmode :
 				obj_light = context.active_object
 
-				if obj_light.constraints['Track To'].influence != 0:
-					bpy.ops.object.visual_transform_apply()
-					obj_light.constraints['Track To'].influence = 0
-
-				#---Get the new direction.
-					lightMatrix = obj_light.matrix_world
-					theAxis = (lightMatrix[0][2], lightMatrix[1][2], lightMatrix[2][2])
-					obj_light['dir'] = theAxis
+				mat_name, mat = get_mat_name(obj_light.data.name)
+			
+			#---If the object is a copy, need to copy the material and rename it		
+				if obj_light.type == "MESH":
+					obj_mat = obj_light.material_slots[0].name
+					if mat_name != obj_mat:
+						new_material = bpy.data.materials[obj_mat].copy()
+						new_material.name = mat_name
+						bpy.data.objects[obj_light.name].active_material = new_material
 				
 				str1 ="Range: " + context.scene.Key_Distance + " || " + \
 					  "Energy: " + context.scene.Key_Strength + " || "	+ \
@@ -1606,7 +1590,10 @@ class AddLight(bpy.types.Operator):
 					bpy.context.area.header_text_set()
 					bpy.context.window.cursor_modal_set("DEFAULT")
 					bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
-					editmode = False
+					if self.orbit:
+						obj_light.location = self.initial_location
+						remove_constraint(self, context, obj_light.data.name)	
+						
 					return {'FINISHED'}
 				else:
 					return {'RUNNING_MODAL'}
@@ -1639,30 +1626,26 @@ class AddLight(bpy.types.Operator):
 
 		if context.space_data.type == 'VIEW_3D':
 
-			args = (self, context)
+			args = (self, context, event)
 			context.area.header_text_set("Add light: CTRL+LMB || Confirm: ESC or RMB")
 			if self.editmode or self.custom :
 				context.scene.objects.active = bpy.data.objects[self.act_light] 
 				context.area.header_text_set("Edit light: LMB || Confirm: ESC or RMB")
-				#self._handle = bpy.types.SpaceView3D.draw_handler_add(edit_callback_px, args, 'WINDOW', 'POST_PIXEL')
 			obj_light = context.active_object
 		
 		#---Init boolean
-			self.doPick = False
 			self.lmb = False
-			self.orbit_mode = False
 			self.falloff_mode = False
 			self.normal = False
 			self.dist_light = False
-			self.strength_light = False
-			self.strength_mode = False
-			self.scale_mode = False
-			self.scale_mode_x = False
-			self.scale_mode_y = False			
+			self.strength_light = False	
 			self.rotate_light_z = False
 			self.scale_light = False
 			self.scale_light_x = False
 			self.scale_light_y = False
+			self.scale_gapy = False
+			self.scale_gapx = False	
+			self.orbit = False
 
 			if obj_light is not None and obj_light.type != 'EMPTY' and obj_light.data.name.startswith("Lumiere") and self.editmode:
 				for ob in context.scene.objects:
@@ -1673,7 +1656,6 @@ class AddLight(bpy.types.Operator):
 				obj_light.select = True
 				self.direction = obj_light.rotation_euler
 				self.hit_world = obj_light.location
-				self.doPick = True		
 
 			self._handle = bpy.types.SpaceView3D.draw_handler_add(draw_callback_px, args, 'WINDOW', 'POST_PIXEL')													 
 			context.window_manager.modal_handler_add(self)
@@ -1722,7 +1704,7 @@ def update_mat(self, context):
 			emit.inputs[0].default_value = cobj.lightcolor
 			diffuse = mat.node_tree.nodes["Diffuse BSDF"]
 			diffuse.inputs[0].default_value = cobj.lightcolor
-			imtext = mat.node_tree.nodes['Image Texture']
+			img_text = mat.node_tree.nodes['Image Texture']
 			invert = mat.node_tree.nodes['Invert']
 			invert.inputs[0].default_value = 1
 			falloff = mat.node_tree.nodes["Light Falloff"]
@@ -1737,31 +1719,22 @@ def update_mat(self, context):
 			if cobj.reflector:
 				#Link Diffuse 
 				mat.node_tree.links.new(diffuse.outputs[0], mix1.inputs[2])	
-				
-				#Force to update : mat.cycles.sample_as_light = True
-				#bpy.context.scene.update() 
+
 			else:
 				#Link Emit 
 				mat.node_tree.links.new(emit.outputs[0], mix1.inputs[2])
 				
-			if cobj.filepath != "" and not cobj.gradient:
-				if cobj.unlink == True:
-					cobj.filepath = ""
-					cobj.unlink = False
-				else:
-
-					try:
-						img = bpy.data.images.load(cobj.filepath, check_existing=True)
-					except:
-						raise NameError("Cannot load image %s" % path)
-					imtext.image = img
-					mat.node_tree.links.new(imtext.outputs[0], emit.inputs[0])
-					mat.node_tree.links.new(imtext.outputs[0], invert.inputs[1])
-					invert.inputs[0].default_value = 0
+			if cobj.img_name != "":
+				img_text.image = bpy.data.images[cobj.img_name]
+				mat.node_tree.links.new(img_text.outputs[0], emit.inputs[0])
+				mat.node_tree.links.new(img_text.outputs[0], invert.inputs[1])
+				invert.inputs[0].default_value = 0
+				if invert.inputs['Fac'].links:
+					mat.node_tree.links.remove(invert.inputs['Fac'].links[0])
 			else:
-				if imtext.outputs['Color'].links:
-					mat.node_tree.links.remove(imtext.outputs['Color'].links[0])
-
+				if img_text.outputs['Color'].links:
+					mat.node_tree.links.remove(img_text.outputs['Color'].links[0])
+					
 			if cobj.gradient and not cobj.reflector:
 				colramp = mat.node_tree.nodes['ColorRamp']
 				grad = mat.node_tree.nodes['Gradient Texture']
@@ -2036,17 +2009,10 @@ bpy.types.Object.skynode = BoolProperty(
 							description="Enable/Disable nodes for world environment ",
 							default=True,
 							update=update_sky)
-
-bpy.types.Object.filepath = StringProperty(
-						   name = "Texture", 
-						   subtype = "FILE_PATH",
-						   update=update_mat) 
-
-bpy.types.Object.unlink = BoolProperty(
-						   name="",
-						   description="Unlink image texture ",
-						   default=False,
-						   update=update_mat)  
+							
+bpy.types.Object.img_name = StringProperty(
+							name="Texture",
+							update=update_mat)
 						   
 bpy.types.Object.nbside = IntProperty(
 						   name="Nbr Side",
@@ -2366,12 +2332,13 @@ class LumierePreferences(bpy.types.Panel):
 						row = col.row(align=True)						
 						if not cobj.gradient and cobj.typlight != "Sky":
 							if cobj.typlight in ("Panel", "Pencil"):
+							#---Image Texture
+								split = row.split(0.27)
+								split.label(text="Texture:")
+								col = box.column(align=True)
 								row = col.row(align=True)
-								if cobj.filepath == "" and cobj.unlink == False:
-									row.prop(cobj, "filepath")
-								else:
-									row.prop(cobj, "unlink", icon='ZOOMOUT')
-									row.prop(cobj, "filepath")
+								row.prop_search(cobj, "img_name", bpy.data, "images", text="")
+								row.operator("image.open",text='', icon='IMASEL')
 
 #########################################################################################################
 
