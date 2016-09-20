@@ -398,7 +398,7 @@ def remove_constraint(self, context, name):
 	empty = context.scene.objects.get(name + "_Empty") 
 	obj_light.constraints['Track To'].influence = 0
 	target = bpy.data.objects[obj_light.parent.name]
-	obj_light['dir'] = (obj_light.location - empty.location) * target.matrix_local.inverted()
+	obj_light['dir'] = (obj_light.location - Vector(obj_light['hit'])).normalized()
 	context.scene.objects.unlink(empty)
 	bpy.data.objects.remove(empty)
 
