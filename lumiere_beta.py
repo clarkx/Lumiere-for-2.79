@@ -2220,7 +2220,7 @@ class LumierePreferences(bpy.types.Panel):
 
 			#---Expand the light options
 				bsplit = col.row()
-				bsplit.prop(cobj, "expanded",icon="MOVE_UP_VEC" if cobj.expanded else "MOVE_DOWN_VEC",icon_only=True, emboss=False)
+				bsplit.prop(cobj, "expanded",icon="TRIA_UP" if cobj.expanded else "TRIA_DOWN",icon_only=True, emboss=False)
 			
 			#---If the light is not hide
 				if cobj.show :
