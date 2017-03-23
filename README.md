@@ -18,7 +18,7 @@ Ver 0.8 :
 - Update panel light 
   - Add the "Keep ratio" option 
     - keep the amount of light when scaling
-    - keep the shap ein reflection with the range
+    - keep the shape in reflection with the range
 - Update lights 
   - add an empty again for duplication and less memory usage
   - add a delete icon to easily remove everything fast
