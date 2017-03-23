@@ -13,6 +13,27 @@ Wiki : https://github.com/clarkx/Lumiere/wiki
 
 
 Changelog :
+Ver 0.8 :
+- Update the doc in the [WIKI](https://github.com/clarkx/Lumiere/wiki#lumiere)
+- Update panel light 
+  - Add the "Keep ratio" option 
+    - keep the amount of light when scaling
+    - keep the shap ein reflection with the range
+- Update lights 
+  - add an empty again for duplication and less memory usage
+  - add a delete icon to easily remove everything fast
+  - add a "change to" option to change this light to any another one
+  - change the ui with all the options
+  - Add "Repeat" option in the gradient
+  - Add "Random" option in the gradient that can be used with grid color or texture
+  
+- Add the projector
+  - project texture or diffuse the light as a softbox
+- Add Environment lighting
+  - Use your image environment interactively
+  - "Align to pixel" option to align your light source with the interactive view
+  - "Change to" option, to change the widget to a sun light
+
 Ver 0.72 :
 - All modal :
   - No need to press the key all the time. Exemple : Press [S] one time to scale the light, press [S] a second time or [LMB] to exit the modal mode.
