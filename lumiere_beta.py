@@ -2697,7 +2697,7 @@ class CreateLight(bpy.types.Operator):
 	bl_options = {"UNDO"}
 
 	#-------------------------------------------------------------------
-	# from_panel = bpy.props.BoolProperty(default=False)
+	from_panel = bpy.props.BoolProperty(default=False)
 	modif = bpy.props.BoolProperty(default=False)
 	editmode = bpy.props.BoolProperty(default=False)
 	dist_light = bpy.props.BoolProperty(default=False)
