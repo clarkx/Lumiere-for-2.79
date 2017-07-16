@@ -13,7 +13,8 @@ Wiki : https://github.com/clarkx/Lumiere/wiki
 
 
 Changelog :
-Ver 0.9 :
+
+Ver 0.9 : https://www.youtube.com/playlist?list=PLG2jIUa3pBt4FJujY_0YYixqWvdR-5Wyn
 - Add groups
 - Export light
 - Export all lights in groups
