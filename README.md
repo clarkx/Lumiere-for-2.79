@@ -13,6 +13,13 @@ Wiki : https://github.com/clarkx/Lumiere/wiki
 
 
 Changelog :
+Ver 0.9 :
+- Add groups
+- Export light
+- Export all lights in groups
+- Import light
+- Import groups
+
 Ver 0.8 : https://www.youtube.com/playlist?list=PLG2jIUa3pBt5jJSWgvmnN8Pi8k2PB2BzV
 - Update the doc in the [WIKI](https://github.com/clarkx/Lumiere/wiki#lumiere)
 - Update panel light 
