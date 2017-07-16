@@ -1,20 +1,23 @@
+# -*- coding:utf-8 -*-
+
 # ***** BEGIN GPL LICENSE BLOCK *****
 #
+#	Lumiere : Blender addon for Blender 3D
+#	Copyright (C) 2017 Cédric Brandin
 #
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
+#	This program is free software: you can redistribute it and/or modify
+#	it under the terms of the GNU General Public License as published by
+#	the Free Software Foundation, either version 3 of the License, or
+#	(at your option) any later version.
 #
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
+#	This program is distributed in the hope that it will be useful,
+#	but WITHOUT ANY WARRANTY; without even the implied warranty of
+#	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#	GNU General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software Foundation,
-# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
+#	You should have received a copy of the GNU General Public License
+#	along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# 
 # ***** END GPL LICENCE BLOCK *****
 
 
@@ -36,8 +39,9 @@ from mathutils import Vector, Matrix, Quaternion, Euler
 from bpy.types import PropertyGroup, UIList, Panel, Operator
 from bpy.props import IntProperty, FloatProperty, BoolProperty, FloatVectorProperty, EnumProperty, StringProperty, CollectionProperty, PointerProperty
 from bpy_extras.object_utils import AddObjectHelper, object_data_add
-from collections import defaultdict
+from collections import defaultdict, Counter
 from bpy_extras.view3d_utils import location_3d_to_region_2d
+import textwrap
 import math
 import bmesh
 import time
@@ -47,6 +51,7 @@ import json
 
 #########################################################################################################
 def update_panel(self, context):
+	"""Update the UI panel of the addon from the preferences"""
 	try:
 		bpy.utils.unregister_class(LumierePreferences)
 	except:
@@ -58,6 +63,7 @@ def update_panel(self, context):
 
 #########################################################################################################
 class LumierePrefs(bpy.types.AddonPreferences):
+	"""Preferences of the keymap for the interactive mode"""
 	bl_idname = __name__
 
 	#Align the light based on the view reflection or the normal of the target object
@@ -125,6 +131,13 @@ class LumierePrefs(bpy.types.AddonPreferences):
 								description="Energy of the light",
 								maxlen=1,
 								default="E")
+														   
+	#Invert the direction of the light
+	bpy.types.Scene.Key_Invert = StringProperty(
+							   name="Invert", 
+							   description="Invert the direction of the light",
+							   maxlen=1,
+							   default="I")
 
 	#Grid Gap 
 	bpy.types.Scene.Key_Gap = EnumProperty(name="Grid Gap", 
@@ -168,15 +181,20 @@ class LumierePrefs(bpy.types.AddonPreferences):
 		row.prop(scene, "Key_Distance")
 		row.prop(scene, "Key_Strength")
 		row = layout.row()
+		row.prop(scene, "Key_Invert")
 		row.prop(scene, "Key_Gap")
-		split = row.split(0.5, align=False)
-		split.prop(self, "category")
-		split.prop(scene, "HUD_color", text="HUD Color")
+		row.prop(self, "category")
+		row = layout.row()
+		row.prop(scene, "HUD_color", text="HUD Color")
+		# split = row.split(0.5, align=False)
+		# split.prop(self, "category")
+		# split.prop(scene, "HUD_color", text="HUD Color")
 		
 #########################################################################################################
 
 #########################################################################################################
 def draw_text(color, font_id, left, height, text):
+	"""Display the differents informations in the interactive mode"""
 	bgl.glColor4f(*color)
 	blf.enable(font_id,blf.SHADOW)
 	blf.shadow(font_id, 5, color[0]-.5, color[1]-.5, color[2]-.5, color[3]-.5) # blur_size being 0 means colored Font, 3 or 5 means a colored rim around the font.# Note that you can only use (0, 3, 5).
@@ -186,6 +204,7 @@ def draw_text(color, font_id, left, height, text):
 	blf.disable(font_id,blf.SHADOW)
 
 def draw_line(x, y, color, width, text_width):
+	"""Draw a simple line to separate the informations"""
 	bgl.glLineWidth(width)
 	bgl.glColor4f(*color)
 	bgl.glEnable(bgl.GL_BLEND)
@@ -196,6 +215,7 @@ def draw_line(x, y, color, width, text_width):
 	bgl.glLineWidth(1)
 
 def draw_circle_2d(color, cx, cy, r):
+	"""Draw a circle in bgl for HUD"""
 	#http://slabode.exofire.net/circle_draw.shtml
 	num_segments = 4 
 	if num_segments < 1:
@@ -216,6 +236,7 @@ def draw_circle_2d(color, cx, cy, r):
 	bgl.glEnd() 
 
 def draw_bounding_box(context, softbox, matrix, c):
+	"""Draw the bounding bow of object in bgl"""
 	bgl.glEnable(bgl.GL_BLEND)
 	bgl.glColor4f(c[0], c[1], c[2], 0.4)
 	bgl.glLineWidth(5)
@@ -245,6 +266,7 @@ def draw_bounding_box(context, softbox, matrix, c):
 	bgl.glEnd()
 	
 def draw_callback_px(self, context, event):
+	"""Display and draw bgl informations"""
 	obj_light = context.active_object
 	txt_add_light = "Add light: CTRL+LMB"
 	region = context.region
@@ -448,82 +470,27 @@ def draw_target_ob(self, context, event):
 def draw_target_px(self, context, event):
 	"""Get the brightest pixel """
 	
-	uv_x, uv_y = self.mouse_path
-	x, y = (event.mouse_x-self.view_3d_region_x[0], event.mouse_y)
-	# img = context.area.spaces[0].image
-	# offset = int(uv_y * self.img_size_x + uv_x) * 4
-	# pixels = [ round(elem, 2) for elem in img.pixels[offset:offset+4] ]
+	if context.area == self.lumiere_area :	
+		uv_x, uv_y = self.mouse_path
+		x, y = (event.mouse_x - self.view_3d_region_x[0], event.mouse_y)
 
-	# font_id = 0	
-	# blf.size(font_id, 15, 72)
-	# w, h, t = (25, 2, 5)
-	# line_height = (blf.dimensions(font_id, "M")[1] * 1.45)
-	# text_width, text_height = blf.dimensions(font_id, str(pixels))
-	
-	#Draw rectangle
-	# color=(.033, .033, .033, 0.3)
-	# bgl.glEnable(bgl.GL_BLEND)
-	# bgl.glColor4f(*color) 
-	# bgl.glBegin(bgl.GL_QUADS)
-	# bgl.glVertex2f(x+w+t+text_width+t, y+t+line_height)
-	# bgl.glVertex2f(x+w, y+t+line_height) 
-	# bgl.glVertex2f(x+w, y) 
-	# bgl.glVertex2f(x+w+t+text_width+t, y)		
-	# bgl.glEnd()	
+	#---Draw stippled lines
+		bgl.glLineStipple(4, 0x5555)
+		bgl.glEnable(bgl.GL_LINE_STIPPLE)
+		bgl.glEnable(bgl.GL_BLEND)
+		hudcol = context.scene.HUD_color
+		bgl.glColor4f(hudcol[0], hudcol[1], hudcol[2], hudcol[3])
+		bgl.glLineWidth(4)
+		bgl.glBegin(bgl.GL_LINE_STRIP)
+		bgl.glVertex2f(x,0)
+		bgl.glVertex2f(x,self.img_size_y)
+		bgl.glEnd()
 
-	# color=(1, 1, 1, 1.0)
-	# bgl.glColor4f(*color) 
-	# blf.position(font_id, x+w+t, y+t, 0)
-	# blf.draw(font_id, str(pixels))	
+	#---Restore opengl defaults
+		bgl.glLineWidth(1)
+		bgl.glDisable(bgl.GL_BLEND)
+		bgl.glColor4f(0.0, 0.0, 0.0, 1.0)	
 
-#---Draw stippled lines
-	bgl.glPushAttrib(bgl.GL_ENABLE_BIT)
-	# glPushAttrib is done to return everything to normal after drawing
-
-	bgl.glLineStipple(4, 0x5555)
-	bgl.glEnable(bgl.GL_LINE_STIPPLE)
-
-	# 50% alpha, 2 pixel width line
-	bgl.glEnable(bgl.GL_BLEND)
-	hudcol = context.scene.HUD_color
-	bgl.glColor4f(hudcol[0], hudcol[1], hudcol[2], hudcol[3])
-	bgl.glLineWidth(4)
-
-	bgl.glBegin(bgl.GL_LINE_STRIP)
-	bgl.glVertex2f(x,0)
-	bgl.glVertex2f(x,self.img_size_y)
-
-
-	bgl.glEnd()
-	bgl.glPopAttrib()
-
-	
-#---Restore opengl defaults
-	bgl.glLineWidth(1)
-	bgl.glDisable(bgl.GL_BLEND)
-	bgl.glColor4f(0.0, 0.0, 0.0, 1.0)	
-#########################################################################################################
-
-#########################################################################################################
-def edit_callback_px(self, context):
-	region = context.region
-	bgl.glEnable(bgl.GL_BLEND)
-	bgl.glColor4f(1.0, 0.4, 0, 0.5)
-	lw = 4 // 2
-	bgl.glLineWidth(lw*4)
-	hudcol = context.scene.HUD_color
-	bgl.glColor4f(hudcol[0], hudcol[1], hudcol[2], hudcol[3])
-	
-#---Text attribute 
-	font_id = 0	 
-	blf.size(font_id, 15, 72)
-	blf.position(font_id, 20, region.height-55, 0)
-	blf.draw(font_id, "Interactive mode")
-				
-#---Restore opengl defaults
-	bgl.glLineWidth(1)
-	bgl.glDisable(bgl.GL_BLEND)
-	bgl.glColor4f(0.0, 0.0, 0.0, 1.0)
 #########################################################################################################
 
 #########################################################################################################
@@ -593,9 +560,7 @@ def remove_constraint(self, context, name):
 
 #########################################################################################################			
 def update_constraint(self, context, event, name):
-	"""
-	Update the object properties for the orbit mode
-	"""
+	"""Update the object properties for the orbit mode"""
 	obj_light = context.object
 	empty = context.scene.objects.get(name + "_Empty") 
 	v3d = context.space_data
@@ -614,6 +579,7 @@ def update_constraint(self, context, event, name):
 
 #########################################################################################################
 def raycast_light(self, range, context, coord, ray_max=1000.0):
+	"""Compute the location and rotation of the light from the angle or normal of the targeted face off the object"""
 	scene = context.scene
 	i = 0
 	p = 0
@@ -667,6 +633,9 @@ def raycast_light(self, range, context, coord, ray_max=1000.0):
 			else:
 				direction = (view_vector).reflect(normal * matrix.inverted())
 			
+			if light.Lumiere.invert_ray:
+				direction *= -1
+			
 		#---Define range
 			hit_world = (matrix * hit) + (range * direction)
 
@@ -699,7 +668,9 @@ def raycast_light(self, range, context, coord, ray_max=1000.0):
 		elif light.Lumiere.lock_light == "Horizontal":
 			light.rotation_euler[0] = math.radians(0)
 
-		
+		if range < 0:
+			print("RANGE NEGATIF")
+			
 		if light.Lumiere.typlight == "Env":
 			if light.Lumiere.rotation_lock_img:
 				light.Lumiere.img_rotation = light.Lumiere.img_pix_rot + math.degrees(light.rotation_euler.z)
@@ -717,7 +688,7 @@ def raycast_light(self, range, context, coord, ray_max=1000.0):
 
 #########################################################################################################
 def repeat_group_mat(mat, name_group):
-
+	"""Group node to repeat pattern"""
 #---Group Node
 	pattern_group = bpy.data.node_groups.get(name_group)
 	if pattern_group is None: 
@@ -785,7 +756,8 @@ def repeat_group_mat(mat, name_group):
 
 #########################################################################################################
 def projector_mat():
-
+	"""Cycles material nodes for the front projector"""
+	
 	bpy.context.scene.render.engine = 'CYCLES'
 
 #------------------------------
@@ -1027,6 +999,8 @@ def projector_mat():
 
 #########################################################################################################
 def softbox_mat(cobj):
+	"""Cycles material nodes for the panel light"""
+	
 #---Create a new material for cycles Engine.
 	bpy.context.scene.render.engine = 'CYCLES'
 	# cobj = bpy.context.scene.objects.active
@@ -1221,735 +1195,12 @@ def softbox_mat(cobj):
 	mat.node_tree.nodes["Emission"].inputs[1].default_value = 1
 	#Link them together
 	mat.node_tree.links.new(mix2.outputs[0], output.inputs['Surface']) 
-
 #########################################################################################################
 
 #########################################################################################################
-def create_softbox(self, context, newlight = False):
-
-	edges = []
-	faces = []
-	listvert = []
+def create_light_env(self, context, dupli_name = "Lumiere"):
+	"""Cycles material nodes for the environment light"""
 	
-	verts = [Vector((-1, 1, 0)),
-			 Vector((1, 1, 0)),
-			 Vector((1, -1, 0)),
-			 Vector((-1, -1, 0)),
-			]
-	
-#---Create the DupliVerts
-	if newlight:
-		dupli = get_object(context, self.lightname)
-	else:
-		dupli = create_dupli(self, context)
-
-#---Create faces 
-	for f in range(len(verts) - 1, -1, -1):
-		listvert.extend([f])
-	faces.extend([listvert])
-
-#---Create object
-	i = 0
-	for ob in context.scene.objects:
-		if ob.type != 'EMPTY' and ob.data.name.startswith("Lumiere"):
-			i += 1
-	
-#---Create the mesh
-	softbox_name = "SOFTBOX_" + dupli.data.name
-	
-	if softbox_name in bpy.data.meshes:
-		mesh = bpy.data.meshes["SOFTBOX_" + dupli.data.name]
-		bpy.data.meshes.remove(mesh)
-
-	mesh = bpy.data.meshes.new(name="SOFTBOX_" + dupli.data.name)
-	mesh.from_pydata(verts, edges, faces)
-	mesh.update(calc_edges=True)
-	object_data_add(context, mesh)
-
-#---Add the material
-	cobj = bpy.context.active_object
-	softbox_mat(cobj)
-	mat_name, mat = get_mat_name(cobj.data.name)
-	cobj.active_material = mat
-	   
-#---Change the visibility 
-	cobj.Lumiere.lightname = cobj.data.name
-	cobj.draw_type = 'TEXTURED'
-	cobj.show_transparent = True
-	cobj.show_wire = True
-	cobj.cycles_visibility.camera = False
-	cobj.cycles_visibility.shadow = False
-	
-#---Add Bevel
-	cobj.modifiers.new("Bevel", type='BEVEL')
-	cobj.modifiers["Bevel"].use_only_vertices = True
-	cobj.modifiers["Bevel"].use_clamp_overlap = True
-	cobj.modifiers["Bevel"].loop_slide = True
-	cobj.modifiers["Bevel"].width = .25
-	cobj.modifiers["Bevel"].segments = 5
-	cobj.modifiers["Bevel"].profile = .5
-	cobj.modifiers["Bevel"].show_expanded = False
-
-#---Add 1 simple subsurf
-	cobj.modifiers.new("subd", type='SUBSURF')
-	cobj.modifiers["subd"].subdivision_type="SIMPLE"
-	cobj.modifiers["subd"].show_expanded = False
-	cobj.modifiers["subd"].render_levels = 1
-
-#---Add Driver
-	add_driver(cobj.modifiers["Bevel"], dupli, 'width', 'Lumiere.softbox_smooth')
-	
-#---Add constraints COPY LOCATION + ROTATION
-	cobj.constraints.new(type='COPY_LOCATION')
-	cobj.constraints["Copy Location"].target = bpy.data.objects[dupli.name]
-	cobj.constraints["Copy Location"].show_expanded = False
-	cobj.constraints.new(type='COPY_ROTATION')
-	cobj.constraints["Copy Rotation"].show_expanded = False
-	cobj.constraints["Copy Rotation"].target = bpy.data.objects[dupli.name]
-	
-	cobj.Lumiere.typlight = "Panel"
-	cobj.Lumiere.energy = 10
-
-#---Parent the blender lamp to the light mesh
-	cobj.parent = dupli
-	cobj.matrix_parent_inverse = dupli.matrix_world.inverted()
-
-#---Make the dupliverts object active
-	bpy.context.scene.objects.active = bpy.data.objects[dupli.name]
-	
-	return(dupli)	
-#########################################################################################################
-
-#########################################################################################################
-def create_projector(self, context, light_name):
-
-#---Get the object used for DupliVerts	
-	dupli = get_object(context, light_name)
-		
-#---Create the mesh
-	projector_name = "PROJECTOR_" + light_name
-	if projector_name in bpy.data.meshes:
-		mesh = bpy.data.meshes[projector_name]
-		bpy.data.meshes.remove(mesh)
-
-	bpy.ops.mesh.primitive_plane_add(location=(0, 0, 0))
-	projector = bpy.context.object
-	projector.draw_type = 'WIRE'
-	projector.data.name = projector_name
-	projector.name = projector_name
-	projector.Lumiere.lightname = projector_name
-	
-#---Add the material
-	projector_mat()
-	mat_name, mat = get_mat_name(projector_name)
-	projector.active_material = mat
-
-#---Parent the projector to the light for DupliVerts
-	projector.parent = dupli
-	projector.matrix_parent_inverse = dupli.matrix_world.inverted()
-	projector.parent_type = 'OBJECT'
-
-#---Change the visibility 
-	projector.draw_type = 'WIRE'
-	projector.show_transparent = True
-	projector.show_wire = False
-	projector.cycles_visibility.camera = False
-	projector.cycles_visibility.diffuse = False
-	projector.cycles_visibility.glossy = True
-	projector.cycles_visibility.transmisison = False
-	projector.cycles_visibility.scatter = False
-	projector.cycles_visibility.shadow = True
-	
-#---Add Bevel
-	projector.modifiers.new("Bevel", type='BEVEL')
-	projector.modifiers["Bevel"].show_expanded = False
-	projector.modifiers["Bevel"].use_only_vertices = True
-	projector.modifiers["Bevel"].use_clamp_overlap = True
-	projector.modifiers["Bevel"].loop_slide = True
-	projector.modifiers["Bevel"].width = 0
-	projector.modifiers["Bevel"].segments = 6
-	projector.modifiers["Bevel"].profile = .5
-	projector.modifiers["Bevel"].limit_method = 'ANGLE'
-	projector.modifiers["Bevel"].angle_limit = math.radians(80)
-
-#---Add 1 simple subsurf
-	projector.modifiers.new("subd", type='SUBSURF')
-	projector.modifiers["subd"].subdivision_type="SIMPLE"
-	projector.modifiers["subd"].render_levels = 1
-	projector.modifiers["subd"].show_expanded = False
-
-#---Add Solidify
-	projector.modifiers.new("Solidify", type='SOLIDIFY')
-	projector.modifiers["Solidify"].thickness = 0.0001
-	projector.modifiers["Solidify"].use_rim = True
-	projector.modifiers["Solidify"].use_rim_only = False
-	projector.modifiers["Solidify"].offset = -1.0
-	projector.modifiers["Solidify"].show_expanded = False
-	
-#---Add constraints COPY ROTATION	
-	# projector.constraints.new(type='TRACK_TO')
-	# projector.constraints["Track To"].show_expanded = False
-	projector.constraints.new(type='COPY_ROTATION')
-	projector.constraints["Copy Rotation"].show_expanded = False	
-	projector.constraints["Copy Rotation"].target = bpy.data.objects[dupli.name]
-	
-	update_projector_scale_min_x(self, context)
-	update_projector_scale_min_y(self, context)
-	projector.select = False
-	dupli.select = True
-	
-	return(projector)	
-
-#########################################################################################################
-
-#########################################################################################################
-def create_base_projector(self, context, light_name):
-
-#---Get the object used for DupliVerts	
-	dupli = get_object(context, light_name)
-	projector = get_object(context, "PROJECTOR_" + light_name)
-	
-#---Create the mesh
-	base_projector_name = "BASE_PROJECTOR_" + light_name
-	if base_projector_name in bpy.data.meshes:
-		mesh = bpy.data.meshes[base_projector_name]
-		bpy.data.meshes.remove(mesh)
-
-	bpy.ops.mesh.primitive_plane_add(location=(0, 0, 0))
-	base_projector = bpy.context.object
-	base_projector.dimensions[0] = projector.dimensions[0]
-	base_projector.dimensions[1] = projector.dimensions[1]
-	base_projector.draw_type = 'WIRE'
-	base_projector.data.name = base_projector.name = base_projector_name
-	base_projector.Lumiere.lightname = base_projector_name
-	
-#---Add the material
-	projector_mat()
-	mat = bpy.data.materials.get("BASE_PROJECTOR_mat")
-	base_projector.data.materials.append(mat)
-
-#---Parent the projector to the light for DupliVerts
-	base_projector.parent = dupli
-	base_projector.parent_type = 'VERTEX'
-	bpy.data.objects[base_projector.name].select = False
-	
-#---Change the visibility 
-	base_projector.draw_type = 'WIRE'
-	base_projector.show_transparent = True
-	base_projector.show_wire = False
-	base_projector.cycles_visibility.camera = False
-	base_projector.cycles_visibility.diffuse = True
-	base_projector.cycles_visibility.glossy = True
-	base_projector.cycles_visibility.transmisison = False
-	base_projector.cycles_visibility.scatter = False
-	base_projector.cycles_visibility.shadow = True
-	
-#---Add Bevel
-	base_projector.modifiers.new("Bevel", type='BEVEL')
-	base_projector.modifiers["Bevel"].show_expanded = False
-	base_projector.modifiers["Bevel"].use_only_vertices = True
-	base_projector.modifiers["Bevel"].use_clamp_overlap = True
-	base_projector.modifiers["Bevel"].loop_slide = True
-	base_projector.modifiers["Bevel"].width = 0
-	base_projector.modifiers["Bevel"].segments = 6
-	base_projector.modifiers["Bevel"].profile = .5
-	base_projector.modifiers["Bevel"].limit_method = 'ANGLE'
-	base_projector.modifiers["Bevel"].angle_limit = math.radians(80)
-
-#---Add Solidify
-	base_projector.modifiers.new("Solidify", type='SOLIDIFY')
-	base_projector.modifiers["Solidify"].thickness = 1.5
-	base_projector.modifiers["Solidify"].use_rim = True
-	base_projector.modifiers["Solidify"].use_rim_only = True
-	base_projector.modifiers["Solidify"].offset = -0.5
-	base_projector.modifiers["Solidify"].show_expanded = False
-
-#---Add 1 simple subsurf
-	base_projector.modifiers.new("subd", type='SUBSURF')
-	base_projector.modifiers["subd"].subdivision_type="SIMPLE"
-	base_projector.modifiers["subd"].levels = 2
-	base_projector.modifiers["subd"].render_levels = 2
-	base_projector.modifiers["subd"].show_expanded = False
-	base_projector.modifiers["subd"].show_only_control_edges = True
-
-#---Add taper
-	base_projector.modifiers.new("Taper", type='SIMPLE_DEFORM')
-	base_projector.modifiers["Taper"].show_expanded = False
-	base_projector.modifiers["Taper"].deform_method = 'TAPER'
-	base_projector.modifiers["Taper"].factor = 0
-	base_projector.modifiers["Taper"].limits[1] = 0.75
-	
-#---Add constraints TRACK TO + COPY LOCATION	
-	# base_projector.constraints.new(type='TRACK_TO')
-	# base_projector.constraints["Track To"].show_expanded = False
-	base_projector.constraints.new(type='COPY_LOCATION')
-	base_projector.constraints["Copy Location"].target = bpy.data.objects[dupli.name]
-	base_projector.constraints["Copy Location"].show_expanded = False
-	base_projector.constraints.new(type='COPY_ROTATION')
-	base_projector.constraints["Copy Rotation"].show_expanded = False
-	base_projector.constraints["Copy Rotation"].target = bpy.data.objects[dupli.name]
-
-	update_projector(self, context)
-
-#---Add drivers
-	add_driver(base_projector.cycles_visibility, projector, 'glossy', 'cycles_visibility.glossy')
-	add_driver(base_projector.modifiers["Bevel"], dupli, 'width', 'Lumiere.projector_smooth')
-	add_driver(base_projector.modifiers["Bevel"], projector, 'segments', 'modifiers["Bevel"].segments')
-	add_driver(base_projector.modifiers["Solidify"], dupli, 'thickness', 'Lumiere.projector_range', func = '(thickness / 3) + ')
-	add_driver(base_projector.modifiers["Taper"], dupli, 'factor', 'Lumiere.projector_taper', func = '1 - ')
-
-	return(base_projector)	
-
-#########################################################################################################
-
-#########################################################################################################
-def create_light_custom(self, context, cobj):
-	i = 0
-
-	for ob in context.scene.objects:
-		if ob.type != 'EMPTY' and ob.data.name.startswith("Lumi"):
-			i += 1
-	
-#---Create the DupliVerts
-	dupli = create_dupli(self, context) 
-	
-#---Add the material
-	cobj.data.name = "SOFTBOX_" + dupli.data.name
-	softbox_mat(cobj)
-	mat_name, mat = get_mat_name(cobj.data.name)
-	cobj.active_material = mat
-	   
-#---Change the visibility 
-	cobj.Lumiere.lightname = cobj.data.name
-	cobj.draw_type = 'TEXTURED'
-	cobj.show_transparent = True
-	cobj.show_wire = True
-	cobj.cycles_visibility.camera = False
-	cobj.cycles_visibility.shadow = False
-	
-#---Add Bevel
-	cobj.modifiers.new("Bevel", type='BEVEL')
-	cobj.modifiers["Bevel"].use_only_vertices = True
-	cobj.modifiers["Bevel"].use_clamp_overlap = True
-	cobj.modifiers["Bevel"].loop_slide = True
-	cobj.modifiers["Bevel"].width = .25
-	cobj.modifiers["Bevel"].segments = 5
-	cobj.modifiers["Bevel"].profile = .5
-	cobj.modifiers["Bevel"].show_expanded = False
-
-#---Add 1 simple subsurf
-	cobj.modifiers.new("subd", type='SUBSURF')
-	cobj.modifiers["subd"].subdivision_type="SIMPLE"
-	cobj.modifiers["subd"].show_expanded = False
-	cobj.modifiers["subd"].render_levels = 1
-
-#---Add Driver
-	add_driver(cobj.modifiers["Bevel"], dupli, 'width', 'Lumiere.softbox_smooth')
-	
-#---Add constraints COPY LOCATION + ROTATION
-	cobj.constraints.new(type='COPY_LOCATION')
-	cobj.constraints["Copy Location"].target = bpy.data.objects[dupli.name]
-	cobj.constraints["Copy Location"].show_expanded = False
-	cobj.constraints.new(type='COPY_ROTATION')
-	cobj.constraints["Copy Rotation"].show_expanded = False
-	cobj.constraints["Copy Rotation"].target = bpy.data.objects[dupli.name]
-	
-	cobj.Lumiere.typlight = "Panel"
-	cobj.Lumiere.energy = 10
-
-#---Parent the blender lamp to the light mesh
-	cobj.parent = dupli
-	cobj.matrix_parent_inverse = dupli.matrix_world.inverted()
-
-#---Make the dupliverts object active
-	bpy.context.scene.objects.active = bpy.data.objects[dupli.name]
-	
-	return(dupli)	
-	
-#########################################################################################################
-
-#########################################################################################################
-def create_light_point(self, context, newlight = False):
-
-#---Create the light mesh object for the duplication of the lamp
-	if newlight:
-		dupli = get_object(context, self.lightname)
-
-	else:
-		dupli = create_dupli(self, context)
-		
-#---Create the point lamp
-	bpy.ops.object.lamp_add(type='POINT', view_align=False, location=(0,0,0))
-	bpy.context.active_object.data.name = "LAMP_" + dupli.data.name 
-	lamp = bpy.context.object
-
-#---Initialize MIS / Type / Name	
-	lamp.data.cycles.use_multiple_importance_sampling = True
-	lamp.Lumiere.typlight = bpy.context.scene.Lumiere.typlight
-	lamp.Lumiere.lightname = bpy.context.active_object.data.name
-
-#---Constraints 
-	bpy.ops.object.constraint_add(type='COPY_TRANSFORMS')
-	lamp.constraints["Copy Transforms"].target = bpy.data.objects[dupli.name]
-	context.scene.objects.active = bpy.data.objects[dupli.name]
-
-#---Parent the blender lamp to the dupli mesh
-	lamp.parent = dupli
-
-#---Create nodes
-	if not newlight:	
-		create_lamp_nodes(self, context, lamp)
-	
-	return(dupli)
-
-#########################################################################################################
-
-#########################################################################################################
-def create_light_sun(self, context, newlight = False):
-
-#---Create the light mesh object for the duplication of the lamp
-	if newlight:
-		dupli = get_object(context, self.lightname)
-	else:
-		dupli = create_dupli(self, context)
-	
-#---Create the sun lamp
-	bpy.ops.object.lamp_add(type='SUN', view_align=False, location=(0,0,0))
-	
-	if dupli.Lumiere.typlight == "Env":
-		context.active_object.data.name = "WORLD_" + dupli.data.name 
-	else:
-		context.active_object.data.name = "LAMP_" + dupli.data.name 
-	lamp = context.object
-
-#---Initialize MIS / Type / Name
-	lamp.data.cycles.use_multiple_importance_sampling = True
-	lamp.Lumiere.typlight = "Sun"
-	lamp.Lumiere.lightname = context.active_object.data.name
-
-#---Constraints 
-	bpy.ops.object.constraint_add(type='COPY_TRANSFORMS')
-	lamp.constraints["Copy Transforms"].target = bpy.data.objects[dupli.name]
-	context.scene.objects.active = bpy.data.objects[dupli.name]
-
-#---Parent the blender lamp to the dupli mesh
-	lamp.parent = dupli 
-
-	#---Create nodes
-	if not newlight:	
-		create_lamp_nodes(self, context, lamp)
-	
-	return(dupli)
-#########################################################################################################
-
-#########################################################################################################
-def create_light_spot(self, context, newlight = False):
-
-#---Create the light mesh object for the duplication of the lamp
-	if newlight:
-		dupli = get_object(context, self.lightname)
-
-	else:
-		dupli = create_dupli(self, context)
-		
-#---Create the spot lamp
-	bpy.ops.object.lamp_add(type='SPOT', view_align=False, location=(0,0,0))
-	context.active_object.data.name = "LAMP_" + dupli.data.name 
-	lamp = context.object
-	lamp.data.cycles.use_multiple_importance_sampling = True
-	lamp.Lumiere.typlight = "Spot"
-	lamp.Lumiere.lightname = context.active_object.data.name
-
-#---Constraints
-	bpy.ops.object.constraint_add(type='COPY_TRANSFORMS')
-	lamp.constraints["Copy Transforms"].target = bpy.data.objects[dupli.name]
-
-#---Parent the blender lamp to the dupli mesh
-	context.scene.objects.active = bpy.data.objects[dupli.name]
-	lamp.parent = dupli
-	
-#---Create nodes
-	if not newlight:	
-		create_lamp_nodes(self, context, lamp)
-
-	return(dupli)
-#########################################################################################################
-
-#########################################################################################################
-def create_light_area(self, context, newlight = False):
-
-#---Create the light mesh object for the duplication of the lamp
-	if newlight:
-		dupli = get_object(context, self.lightname)
-	else:
-		dupli = create_dupli(self, context)
-		
-#---Create the area lamp
-	bpy.ops.object.lamp_add(type='AREA', view_align=False, location=(0,0,0))
-	lamp = bpy.context.object
-	lamp.data.shape = 'RECTANGLE'
-	lamp.data.name = "LAMP_" + dupli.data.name 
-	lamp.data.cycles.use_multiple_importance_sampling = True
-	lamp.Lumiere.typlight = "Area"
-	lamp.Lumiere.lightname = context.active_object.data.name
-
-#---Add constraints COPY LOCATION + ROTATION
-	lamp.constraints.new(type='COPY_LOCATION')
-	lamp.constraints["Copy Location"].target = bpy.data.objects[dupli.name]
-	lamp.constraints["Copy Location"].show_expanded = False
-	lamp.constraints.new(type='COPY_ROTATION')
-	lamp.constraints["Copy Rotation"].show_expanded = False
-	lamp.constraints["Copy Rotation"].target = bpy.data.objects[dupli.name]
-
-#---Parent the blender lamp to the dupli mesh
-	context.scene.objects.active = bpy.data.objects[dupli.name]
-	lamp.parent = dupli
-	
-#---Create nodes
-	if not newlight:	
-		create_lamp_nodes(self, context, lamp)
-	
-	return(dupli)
-	
-#########################################################################################################
-
-#########################################################################################################
-def create_dupli(self, context):
-	"""
-	Mesh for duplication of the blender lamp
-	"""
-	verts = [(0, 0, 0)]
-
-#---Create object
-	i = 0
-	for ob in context.scene.objects:
-		if ob.type != 'EMPTY' and ob.data.name.startswith("Lumiere"):
-			i += 1
-	me = bpy.data.meshes.new(name="Lumiere." + str(i))
-	dupli = bpy.data.objects.new("Lumiere." + str(i), me)
-	dupli.select = True
-	context.scene.objects.link(dupli)
-	me.from_pydata(verts, [], [])
-	me.update() 
-
-	context.scene.objects.active = bpy.data.objects["Lumiere." + str(i)]
-	
-	dupli = context.object
-	dupli.Lumiere.typlight = context.scene.Lumiere.typlight
-	dupli.Lumiere.lightname = dupli.data.name 
-	dupli.constraints.new(type='TRACK_TO')
-	
-#---Change the visibility 
-	dupli.draw_type = 'TEXTURED'
-	dupli.show_transparent = True
-	dupli.show_wire = True
-	dupli.cycles_visibility.camera = False
-	dupli.cycles_visibility.diffuse = True
-	dupli.cycles_visibility.glossy = True
-	dupli.cycles_visibility.transmisison = False
-	dupli.cycles_visibility.scatter = False
-	dupli.cycles_visibility.shadow = True
-	dupli.dupli_type = 'VERTS'
-	
-	return (dupli)
-
-#########################################################################################################
-
-#########################################################################################################
-def create_lamp_nodes(self, context, lamp):
-
-#---Emission
-	emit = lamp.data.node_tree.nodes["Emission"]
-	emit.inputs[1].default_value = lamp.Lumiere.energy
-	emit.location = (120.0, 320.0)	
-	
-#---Blackbody : Horizon daylight kelvin temperature for sun
-	blackbody = lamp.data.node_tree.nodes.new("ShaderNodeBlackbody")
-	blackbody.inputs[0].default_value = 4000
-	blackbody.location = (-100.0, 480.0)	
-	
-#---Color Ramp Node for area
-	colramp = lamp.data.node_tree.nodes.new(type="ShaderNodeValToRGB")
-	colramp.color_ramp.elements[0].color = (1,1,1,1)
-	# lamp.data.node_tree.links.new(colramp.outputs[0], emit.inputs[0])
-	colramp.location = (-180.0, 380.0)	
-	
-#---Light Falloff
-	falloff = lamp.data.node_tree.nodes.new("ShaderNodeLightFalloff")
-	falloff.inputs[0].default_value = lamp.Lumiere.energy
-	if lamp.data.type != "SUN":
-		lamp.data.node_tree.links.new(falloff.outputs[1], emit.inputs[1])
-	falloff.location = (-100.0, 140.0)	
-
-#---Dot Product
-	dotpro = lamp.data.node_tree.nodes.new("ShaderNodeVectorMath")
-	dotpro.operation = 'DOT_PRODUCT'
-	lamp.data.node_tree.links.new(dotpro.outputs[1], colramp.inputs[0])
-	dotpro.location = (-360.0, 320.0)
-
-#---Geometry Node
-	geom = lamp.data.node_tree.nodes.new(type="ShaderNodeNewGeometry")
-	lamp.data.node_tree.links.new(geom.outputs[1], dotpro.inputs[0])
-	lamp.data.node_tree.links.new(geom.outputs[4], dotpro.inputs[1])
-	geom.location = (-540.0, 360.0)		   
-
-#########################################################################################################
-
-#########################################################################################################
-def create_lamp_grid(self, context):
-	verts = []
-	edges = []
-	faces = []
-	listvert = []
-	listfaces = []
-		
-	# obj_light = context.active_object
-	obj_light = get_object(context, self.lightname)
-	if obj_light.Lumiere.nbcol < 1: obj_light.Lumiere.nbcol = 1
-	if obj_light.Lumiere.nbrow < 1: obj_light.Lumiere.nbrow = 1
-
-	gapx = obj_light.Lumiere.gapx
-	gapy = obj_light.Lumiere.gapy
-	widthx = .01 #* obj_light.Lumiere.scale_x
-	widthy = .01 #* obj_light.Lumiere.scale_y
-	left = -((widthx * (obj_light.Lumiere.nbcol-1)) + (gapx * (obj_light.Lumiere.nbcol-1)) ) / 2
-	right = left + widthx
-	start = -((widthy * (obj_light.Lumiere.nbrow-1)) + (gapy * (obj_light.Lumiere.nbrow-1))) / 2
-	end = start + widthy
-	i = 0
-
-#---Get the material
-	mat_name, mat = get_mat_name(obj_light.data.name)
-	
-	for x in range(obj_light.Lumiere.nbcol):
-	#---Create Verts, Faces on X axis
-		nbvert = len(verts)
-		verts.extend([(left,start,0)])
-		start2 = end + gapy
-		end2 = start2 + widthy
-
-		for y in range(obj_light.Lumiere.nbrow-1):
-		#---Create Verts, Faces on Z axis
-			nbvert = len(verts)
-			verts.extend([(left,start2,0)])
-			start2 = end2 + gapy
-			end2 = start2 + widthy
-
-		left = right + gapx
-		right = left + widthx
-
-#---Get the mesh
-	old_mesh = obj_light.data
-	mesh = bpy.data.meshes.new(name=obj_light.name)
- 
-#---Update the mesh
-	mesh.from_pydata(verts, [], [])
-	mesh.update(calc_edges=True)
-	
-#---Retrieve the name and delete the old mesh
-	for i in bpy.data.objects:
-		if i.data == old_mesh:
-			i.data = mesh
-	name = old_mesh.name
-	old_mesh.user_clear()
-	bpy.data.meshes.remove(old_mesh)
-	mesh.name = name	
-	
-	context.object.draw_type = 'WIRE'
-	context.object.show_transparent = True
-	context.object.show_wire = True
-
-	cobj = context.active_object
-	cobj.Lumiere.lightname = cobj.data.name
-	context.object.cycles_visibility.camera = False
-
-#########################################################################################################
-
-#########################################################################################################
-def create_light_sky(self, context):
-
-#---Create a new world if not exist
-	world = ""
-	for w in bpy.data.worlds:
-		if w.name == "Lumiere_world":
-			world = bpy.data.worlds['Lumiere_world']
-			
-	if world == "":
-		context.scene.world = bpy.data.worlds.new("Lumiere_world")
-		world = context.scene.world
-
-	world.use_nodes= True
-	world.node_tree.nodes.clear() 
-
-#---Add a lamp for the sun and drive the sky texture
-	cobj = create_light_sun(self, context)		
-
-#---Use multiple importance sampling for the world
-	context.scene.world.cycles.sample_as_light = True
-	cobj.data.cycles.use_multiple_importance_sampling = True
-	
-#---Shaders
-	sky = world.node_tree.nodes.new("ShaderNodeTexSky")
-	background = world.node_tree.nodes.new('ShaderNodeBackground')
-	output = world.node_tree.nodes.new("ShaderNodeOutputWorld")
-
-#---Links
-	world.node_tree.links.new(sky.outputs[0], background.inputs[0])
-	world.node_tree.links.new(background.outputs[0], output.inputs[0])
-	background.inputs[1].default_value = 2.0
-
-#---UI
-	sky.location = (-200,0)
-	output.location = (200,0)
-
-	cobj.Lumiere.typlight = "Sky"
-
-	return(cobj)
-#########################################################################################################
-
-#########################################################################################################
-def create_light_env_widget(self, context, dupli):
-
-#---Create widget
-	size = .8
-	verts = [(0.0*size, 0.29663604497909546*size, 0.0*size), (-0.05787081643939018*size, 0.2909362316131592*size, 0.0*size), (-0.11351769417524338*size, 0.27405592799186707*size, 0.0*size), (-0.16480213403701782*size, 0.24664384126663208*size, 0.0*size), (-0.2097533494234085*size, 0.2097533494234085*size, 0.0*size), (-0.24664384126663208*size, 0.16480213403701782*size, 0.0*size), (-0.27405592799186707*size, 0.11351767927408218*size, 0.0*size), (-0.2909362316131592*size, 0.05787082761526108*size, 0.0*size), (-0.29663604497909546*size, 2.2395397536456585e-08*size, 0.0*size), (-0.2909362316131592*size, -0.0578707791864872*size, 0.0*size), (-0.27405598759651184*size, -0.1135176420211792*size, 0.0*size), (-0.24664384126663208*size, -0.16480213403701782*size, 0.0*size), (-0.2097533494234085*size, -0.2097533494234085*size, 0.0*size), (-0.16480213403701782*size, -0.24664384126663208*size, 0.0*size), (-0.1135176420211792*size, -0.27405592799186707*size, 0.0*size), (-0.05787074938416481*size, -0.2909362316131592*size, 0.0*size), (9.665627942467836e-08*size, -0.29663604497909546*size, 0.0*size), (0.05787093564867973*size, -0.2909362018108368*size, 0.0*size), (0.11351781338453293*size, -0.2740558981895447*size, 0.0*size), (0.16480228304862976*size, -0.24664373695850372*size, 0.0*size), (0.20975348353385925*size, -0.20975323021411896*size, 0.0*size), (0.24664399027824402*size, -0.1648019701242447*size, 0.0*size), (0.2740560472011566*size, -0.11351746320724487*size, 0.0*size), (0.29093629121780396*size, -0.05787056311964989*size, 0.0*size), (0.29663604497909546*size, 2.864314581074723e-07*size, 0.0*size), (0.2909362018108368*size, 0.057871121913194656*size, 0.0*size), (0.2740557789802551*size, 0.11351799219846725*size, 0.0*size), (0.24664364755153656*size, 0.1648024320602417*size, 0.0*size), (0.20975308120250702*size, 0.2097536027431488*size, 0.0*size), (0.16480180621147156*size, 0.24664407968521118*size, 0.0*size), (0.11351729184389114*size, 0.2740561366081238*size, 0.0*size), (0.05787036940455437*size, 0.29093629121780396*size, 0.0*size), (0.0*size, 0.5299842357635498*size, 0.0*size), (-0.20281623303890228*size, 0.48964163661003113*size, 0.0*size), (-0.3747554123401642*size, 0.3747554123401642*size, 0.0*size), (-0.48964163661003113*size, 0.2028162032365799*size, 0.0*size), (-0.5299842357635498*size, 4.001270070830287e-08*size, 0.0*size), (-0.48964163661003113*size, -0.20281609892845154*size, 0.0*size), (-0.3747554123401642*size, -0.3747554123401642*size, 0.0*size), (-0.20281609892845154*size, -0.4896417260169983*size, 0.0*size), (1.726908180899045e-07*size, -0.5299842357635498*size, 0.0*size), (0.202816441655159*size, -0.48964157700538635*size, 0.0*size), (0.37475571036338806*size, -0.37475523352622986*size, 0.0*size), (0.48964181542396545*size, -0.20281578600406647*size, 0.0*size), (0.5299842357635498*size, 5.117523755870934e-07*size, 0.0*size), (0.4896414279937744*size, 0.20281675457954407*size, 0.0*size), (0.37475499510765076*size, 0.3747558891773224*size, 0.0*size), (0.20281550288200378*size, 0.4896419644355774*size, 0.0*size), ]
-	edges = [(1, 0), (2, 1), (3, 2), (4, 3), (5, 4), (6, 5), (7, 6), (8, 7), (9, 8), (10, 9), (11, 10), (12, 11), (13, 12), (14, 13), (15, 14), (16, 15), (17, 16), (18, 17), (19, 18), (20, 19), (21, 20), (22, 21), (23, 22), (24, 23), (25, 24), (26, 25), (27, 26), (28, 27), (29, 28), (30, 29), (31, 30), (0, 31), (0, 32), (2, 33), (4, 34), (6, 35), (8, 36), (10, 37), (12, 38), (14, 39), (16, 40), (18, 41), (20, 42), (22, 43), (24, 44), (26, 45), (28, 46), (30, 47), ]
-
-#---Get the mesh if already exist
-	world_name = "WORLD_" + dupli.data.name
-	if world_name in bpy.data.meshes:
-		mesh = bpy.data.meshes[world_name]
-		bpy.data.meshes.remove(mesh)
-	
-#---Create the mesh
-	mesh = bpy.data.meshes.new(world_name)
-	mesh.from_pydata(verts, edges, [])
-	mesh.update(calc_edges=True)
-	object_data_add(context, mesh)
-	cobj = context.object
-	cobj.Lumiere.lightname = cobj.data.name
-	cobj.draw_type = 'WIRE'
-	
-#---Add constraints COPY LOCATION + ROTATION
-	cobj.constraints.new(type='COPY_LOCATION')
-	cobj.constraints["Copy Location"].target = bpy.data.objects[dupli.name]
-	cobj.constraints["Copy Location"].show_expanded = False
-	cobj.constraints.new(type='COPY_ROTATION')
-	cobj.constraints["Copy Rotation"].show_expanded = False
-	cobj.constraints["Copy Rotation"].target = bpy.data.objects[dupli.name]
-	
-	cobj.Lumiere.typlight = "Env"
-	# cobj.Lumiere.energy = 10
-	
-#---Parent the blender lamp to the light mesh
-	cobj.parent = dupli
-	cobj.matrix_parent_inverse = dupli.matrix_world.inverted()	
-
-#########################################################################################################
-
-#########################################################################################################
-def create_light_env(self, context):
-
 #---Create a new world if not exist
 	world = ""
 	for w in bpy.data.worlds:
@@ -2095,14 +1346,755 @@ def create_light_env(self, context):
 #########################################################################################################
 
 #########################################################################################################
-class AddLight(bpy.types.Operator):
-	"""Edit the light"""
+def create_softbox(self, context, newlight = False, dupli_name = "Lumiere"):
+	"""Create the panel light with modifiers"""
+	edges = []
+	faces = []
+	listvert = []
+	
+	verts = [Vector((-1, 1, 0)),
+			 Vector((1, 1, 0)),
+			 Vector((1, -1, 0)),
+			 Vector((-1, -1, 0)),
+			]
+	
+#---Create the DupliVerts
+	if newlight:
+		dupli = get_object(context, self.lightname)
+	else:
+		dupli = create_dupli(self, context, dupli_name)
+
+#---Create faces 
+	for f in range(len(verts) - 1, -1, -1):
+		listvert.extend([f])
+	faces.extend([listvert])
+
+#---Create object
+	i = 0
+	for ob in context.scene.objects:
+		if ob.type != 'EMPTY' and ob.data.name.startswith("Lumiere"):
+			i += 1
+	
+#---Create the mesh
+	softbox_name = "SOFTBOX_" + dupli.data.name
+	
+	if softbox_name in bpy.data.meshes:
+		mesh = bpy.data.meshes[softbox_name]
+		bpy.data.meshes.remove(mesh)
+
+	mesh = bpy.data.meshes.new(name=softbox_name)
+	cobj = bpy.data.objects.new(softbox_name, mesh)
+	cobj.select = True
+	context.scene.objects.link(cobj)
+	mesh.from_pydata(verts, edges, faces)
+	mesh.update()
+	context.scene.objects.active = bpy.data.objects[softbox_name]
+
+#---Add the material
+	cobj = context.object
+	softbox_mat(cobj)
+	mat_name, mat = get_mat_name(cobj.data.name)
+	cobj.active_material = mat
+	   
+#---Change the visibility 
+	cobj.Lumiere.lightname = cobj.data.name
+	cobj.draw_type = 'TEXTURED'
+	cobj.show_transparent = True
+	cobj.show_wire = True
+	cobj.cycles_visibility.camera = False
+	cobj.cycles_visibility.shadow = False
+	
+#---Add Bevel
+	cobj.modifiers.new("Bevel", type='BEVEL')
+	cobj.modifiers["Bevel"].use_only_vertices = True
+	cobj.modifiers["Bevel"].use_clamp_overlap = True
+	cobj.modifiers["Bevel"].loop_slide = True
+	cobj.modifiers["Bevel"].width = .25
+	cobj.modifiers["Bevel"].segments = 5
+	cobj.modifiers["Bevel"].profile = .5
+	cobj.modifiers["Bevel"].show_expanded = False
+
+#---Add 1 simple subsurf
+	cobj.modifiers.new("subd", type='SUBSURF')
+	cobj.modifiers["subd"].subdivision_type="SIMPLE"
+	cobj.modifiers["subd"].show_expanded = False
+	cobj.modifiers["subd"].render_levels = 1
+	
+#---Add constraints COPY LOCATION + ROTATION
+	cobj.constraints.new(type='COPY_LOCATION')
+	cobj.constraints["Copy Location"].target = bpy.data.objects[dupli.name]
+	cobj.constraints["Copy Location"].show_expanded = False
+	cobj.constraints.new(type='COPY_ROTATION')
+	cobj.constraints["Copy Rotation"].show_expanded = False
+	cobj.constraints["Copy Rotation"].target = bpy.data.objects[dupli.name]
+	
+	cobj.Lumiere.typlight = "Panel"
+	cobj.Lumiere.energy = 10
+
+#---Parent the blender lamp to the light mesh
+	cobj.parent = dupli
+	cobj.matrix_parent_inverse = dupli.matrix_world.inverted()
+
+#---Make the dupliverts object active
+	bpy.context.scene.objects.active = bpy.data.objects[dupli.name]
+	
+	return(dupli)	
+#########################################################################################################
+
+#########################################################################################################
+def create_projector(self, context, light_name):
+	"""Create the projector with modifiers"""
+	
+#---Get the object used for DupliVerts	
+	dupli = get_object(context, light_name)
+		
+#---Create the mesh
+	projector_name = "PROJECTOR_" + light_name
+	if projector_name in bpy.data.meshes:
+		mesh = bpy.data.meshes[projector_name]
+		bpy.data.meshes.remove(mesh)
+
+	bpy.ops.mesh.primitive_plane_add(location=(0, 0, 0))
+	projector = bpy.context.object
+	projector.draw_type = 'WIRE'
+	projector.data.name = projector_name
+	projector.name = projector_name
+	projector.Lumiere.lightname = projector_name
+	
+#---Add the material
+	projector_mat()
+	mat_name, mat = get_mat_name(projector_name)
+	projector.active_material = mat
+
+#---Parent the projector to the light for DupliVerts
+	projector.parent = dupli
+	projector.matrix_parent_inverse = dupli.matrix_world.inverted()
+	projector.parent_type = 'OBJECT'
+
+#---Change the visibility 
+	projector.draw_type = 'WIRE'
+	projector.show_transparent = True
+	projector.show_wire = False
+	projector.cycles_visibility.camera = False
+	projector.cycles_visibility.diffuse = False
+	projector.cycles_visibility.glossy = True
+	projector.cycles_visibility.transmisison = False
+	projector.cycles_visibility.scatter = False
+	projector.cycles_visibility.shadow = True
+	
+#---Add Bevel
+	projector.modifiers.new("Bevel", type='BEVEL')
+	projector.modifiers["Bevel"].show_expanded = False
+	projector.modifiers["Bevel"].use_only_vertices = True
+	projector.modifiers["Bevel"].use_clamp_overlap = True
+	projector.modifiers["Bevel"].loop_slide = True
+	projector.modifiers["Bevel"].width = 0
+	projector.modifiers["Bevel"].segments = 6
+	projector.modifiers["Bevel"].profile = .5
+	projector.modifiers["Bevel"].limit_method = 'ANGLE'
+	projector.modifiers["Bevel"].angle_limit = math.radians(80)
+
+#---Add 1 simple subsurf
+	projector.modifiers.new("subd", type='SUBSURF')
+	projector.modifiers["subd"].subdivision_type="SIMPLE"
+	projector.modifiers["subd"].render_levels = 1
+	projector.modifiers["subd"].show_expanded = False
+
+#---Add Solidify
+	projector.modifiers.new("Solidify", type='SOLIDIFY')
+	projector.modifiers["Solidify"].thickness = 0.0001
+	projector.modifiers["Solidify"].use_rim = True
+	projector.modifiers["Solidify"].use_rim_only = False
+	projector.modifiers["Solidify"].offset = -1.0
+	projector.modifiers["Solidify"].show_expanded = False
+	
+#---Add constraints COPY ROTATION	
+	# projector.constraints.new(type='TRACK_TO')
+	# projector.constraints["Track To"].show_expanded = False
+	projector.constraints.new(type='COPY_ROTATION')
+	projector.constraints["Copy Rotation"].show_expanded = False	
+	projector.constraints["Copy Rotation"].target = bpy.data.objects[dupli.name]
+	
+	update_projector_scale_min_x(self, context)
+	update_projector_scale_min_y(self, context)
+	projector.select = False
+	dupli.select = True
+	
+	return(projector)	
+
+#########################################################################################################
+
+#########################################################################################################
+def create_base_projector(self, context, light_name):
+	"""Create the back of the projector with modifiers"""
+	
+#---Get the object used for DupliVerts	
+	dupli = get_object(context, light_name)
+	projector = get_object(context, "PROJECTOR_" + light_name)
+	
+#---Create the mesh
+	base_projector_name = "BASE_PROJECTOR_" + light_name
+	if base_projector_name in bpy.data.meshes:
+		mesh = bpy.data.meshes[base_projector_name]
+		bpy.data.meshes.remove(mesh)
+
+	bpy.ops.mesh.primitive_plane_add(location=(0, 0, 0))
+	base_projector = bpy.context.object
+	base_projector.dimensions[0] = projector.dimensions[0]
+	base_projector.dimensions[1] = projector.dimensions[1]
+	base_projector.draw_type = 'WIRE'
+	base_projector.data.name = base_projector.name = base_projector_name
+	base_projector.Lumiere.lightname = base_projector_name
+	
+#---Add the material
+	projector_mat()
+	mat = bpy.data.materials.get("BASE_PROJECTOR_mat")
+	base_projector.data.materials.append(mat)
+
+#---Parent the projector to the light for DupliVerts
+	base_projector.parent = dupli
+	base_projector.parent_type = 'VERTEX'
+	bpy.data.objects[base_projector.name].select = False
+	
+#---Change the visibility 
+	base_projector.draw_type = 'WIRE'
+	base_projector.show_transparent = True
+	base_projector.show_wire = False
+	base_projector.cycles_visibility.camera = False
+	base_projector.cycles_visibility.diffuse = True
+	base_projector.cycles_visibility.glossy = True
+	base_projector.cycles_visibility.transmisison = False
+	base_projector.cycles_visibility.scatter = False
+	base_projector.cycles_visibility.shadow = True
+	
+#---Add Bevel
+	base_projector.modifiers.new("Bevel", type='BEVEL')
+	base_projector.modifiers["Bevel"].show_expanded = False
+	base_projector.modifiers["Bevel"].use_only_vertices = True
+	base_projector.modifiers["Bevel"].use_clamp_overlap = True
+	base_projector.modifiers["Bevel"].loop_slide = True
+	base_projector.modifiers["Bevel"].width = 0
+	base_projector.modifiers["Bevel"].segments = 6
+	base_projector.modifiers["Bevel"].profile = .5
+	base_projector.modifiers["Bevel"].limit_method = 'ANGLE'
+	base_projector.modifiers["Bevel"].angle_limit = math.radians(80)
+
+#---Add Solidify
+	base_projector.modifiers.new("Solidify", type='SOLIDIFY')
+	base_projector.modifiers["Solidify"].thickness = 1.5
+	base_projector.modifiers["Solidify"].use_rim = True
+	base_projector.modifiers["Solidify"].use_rim_only = True
+	base_projector.modifiers["Solidify"].offset = -0.5
+	base_projector.modifiers["Solidify"].show_expanded = False
+
+#---Add 1 simple subsurf
+	base_projector.modifiers.new("subd", type='SUBSURF')
+	base_projector.modifiers["subd"].subdivision_type="SIMPLE"
+	base_projector.modifiers["subd"].levels = 2
+	base_projector.modifiers["subd"].render_levels = 2
+	base_projector.modifiers["subd"].show_expanded = False
+	base_projector.modifiers["subd"].show_only_control_edges = True
+
+#---Add taper
+	base_projector.modifiers.new("Taper", type='SIMPLE_DEFORM')
+	base_projector.modifiers["Taper"].show_expanded = False
+	base_projector.modifiers["Taper"].deform_method = 'TAPER'
+	base_projector.modifiers["Taper"].factor = 0
+	base_projector.modifiers["Taper"].limits[1] = 0.75
+	
+#---Add constraints TRACK TO + COPY LOCATION	
+	# base_projector.constraints.new(type='TRACK_TO')
+	# base_projector.constraints["Track To"].show_expanded = False
+	base_projector.constraints.new(type='COPY_LOCATION')
+	base_projector.constraints["Copy Location"].target = bpy.data.objects[dupli.name]
+	base_projector.constraints["Copy Location"].show_expanded = False
+	base_projector.constraints.new(type='COPY_ROTATION')
+	base_projector.constraints["Copy Rotation"].show_expanded = False
+	base_projector.constraints["Copy Rotation"].target = bpy.data.objects[dupli.name]
+
+	update_projector(self, context)
+
+#---Add drivers
+	add_driver(base_projector.cycles_visibility, projector, 'glossy', 'cycles_visibility.glossy')
+	add_driver(base_projector.modifiers["Bevel"], dupli, 'width', 'Lumiere.projector_smooth')
+	add_driver(base_projector.modifiers["Bevel"], projector, 'segments', 'modifiers["Bevel"].segments')
+	add_driver(base_projector.modifiers["Solidify"], dupli, 'thickness', 'Lumiere.projector_range', func = '(thickness / 3) + ')
+	add_driver(base_projector.modifiers["Taper"], dupli, 'factor', 'Lumiere.projector_taper', func = '1 - ')
+
+	return(base_projector)	
+
+#########################################################################################################
+
+#########################################################################################################
+def create_light_custom(self, context, cobj):
+	"""Create custom light"""
+	
+	i = 0
+
+	for ob in context.scene.objects:
+		if ob.type != 'EMPTY' and ob.data.name.startswith("Lumi"):
+			i += 1
+	
+#---Create the DupliVerts
+	dupli = create_dupli(self, context) 
+	
+#---Add the material
+	cobj.data.name = "SOFTBOX_" + dupli.data.name
+	softbox_mat(cobj)
+	mat_name, mat = get_mat_name(cobj.data.name)
+	cobj.active_material = mat
+	   
+#---Change the visibility 
+	cobj.Lumiere.lightname = cobj.data.name
+	cobj.draw_type = 'TEXTURED'
+	cobj.show_transparent = True
+	cobj.show_wire = True
+	cobj.cycles_visibility.camera = False
+	cobj.cycles_visibility.shadow = False
+	
+#---Add Bevel
+	cobj.modifiers.new("Bevel", type='BEVEL')
+	cobj.modifiers["Bevel"].use_only_vertices = True
+	cobj.modifiers["Bevel"].use_clamp_overlap = True
+	cobj.modifiers["Bevel"].loop_slide = True
+	cobj.modifiers["Bevel"].width = .25
+	cobj.modifiers["Bevel"].segments = 5
+	cobj.modifiers["Bevel"].profile = .5
+	cobj.modifiers["Bevel"].show_expanded = False
+
+#---Add 1 simple subsurf
+	cobj.modifiers.new("subd", type='SUBSURF')
+	cobj.modifiers["subd"].subdivision_type="SIMPLE"
+	cobj.modifiers["subd"].show_expanded = False
+	cobj.modifiers["subd"].render_levels = 1
+	
+#---Add constraints COPY LOCATION + ROTATION
+	cobj.constraints.new(type='COPY_LOCATION')
+	cobj.constraints["Copy Location"].target = bpy.data.objects[dupli.name]
+	cobj.constraints["Copy Location"].show_expanded = False
+	cobj.constraints.new(type='COPY_ROTATION')
+	cobj.constraints["Copy Rotation"].show_expanded = False
+	cobj.constraints["Copy Rotation"].target = bpy.data.objects[dupli.name]
+	
+	cobj.Lumiere.typlight = "Panel"
+	cobj.Lumiere.energy = 10
+
+#---Parent the blender lamp to the light mesh
+	cobj.parent = dupli
+	cobj.matrix_parent_inverse = dupli.matrix_world.inverted()
+
+#---Make the dupliverts object active
+	bpy.context.scene.objects.active = bpy.data.objects[dupli.name]
+	
+	return(dupli)	
+	
+#########################################################################################################
+
+#########################################################################################################
+def create_light_point(self, context, newlight = False, dupli_name = "Lumiere"):
+	"""Create a blender light point"""
+	
+#---Create the light mesh object for the duplication of the lamp
+	if newlight:
+		dupli = get_object(context, self.lightname)
+
+	else:
+		dupli = create_dupli(self, context, dupli_name)
+		
+#---Create the point lamp
+	bpy.ops.object.lamp_add(type='POINT', view_align=False, location=(0,0,0))
+	bpy.context.active_object.data.name = "LAMP_" + dupli.data.name 
+	lamp = bpy.context.object
+	lamp.name = "LAMP_" + dupli.data.name 
+
+#---Initialize MIS / Type / Name	
+	lamp.data.cycles.use_multiple_importance_sampling = True
+	lamp.Lumiere.typlight = bpy.context.scene.Lumiere.typlight
+	lamp.Lumiere.lightname = bpy.context.active_object.data.name
+
+#---Constraints 
+	bpy.ops.object.constraint_add(type='COPY_TRANSFORMS')
+	lamp.constraints["Copy Transforms"].target = bpy.data.objects[dupli.name]
+	context.scene.objects.active = bpy.data.objects[dupli.name]
+
+#---Parent the blender lamp to the dupli mesh
+	lamp.parent = dupli
+
+#---Create nodes
+	if not newlight:	
+		create_lamp_nodes(self, context, lamp)
+	
+	return(dupli)
+
+#########################################################################################################
+
+#########################################################################################################
+def create_light_sun(self, context, newlight = False, dupli_name = "Lumiere"):
+	"""Create a blender light sun"""
+	
+#---Create the light mesh object for the duplication of the lamp
+	if newlight:
+		dupli = get_object(context, self.lightname)
+	else:
+		dupli = create_dupli(self, context, dupli_name)
+	
+#---Create the sun lamp
+	bpy.ops.object.lamp_add(type='SUN', view_align=False, location=(0,0,0))
+	
+	if dupli.Lumiere.typlight == "Env":
+		context.active_object.data.name = "WORLD_" + dupli.data.name 
+	else:
+		context.active_object.data.name = "LAMP_" + dupli.data.name 
+	lamp = context.object
+	lamp.name = "LAMP_" + dupli.data.name 
+
+#---Initialize MIS / Type / Name
+	lamp.data.cycles.use_multiple_importance_sampling = True
+	lamp.Lumiere.typlight = "Sun"
+	lamp.Lumiere.lightname = context.active_object.data.name
+
+#---Constraints 
+	bpy.ops.object.constraint_add(type='COPY_TRANSFORMS')
+	lamp.constraints["Copy Transforms"].target = bpy.data.objects[dupli.name]
+	context.scene.objects.active = bpy.data.objects[dupli.name]
+
+#---Parent the blender lamp to the dupli mesh
+	lamp.parent = dupli 
+
+	#---Create nodes
+	if not newlight:	
+		create_lamp_nodes(self, context, lamp)
+	
+	return(dupli)
+#########################################################################################################
+
+#########################################################################################################
+def create_light_spot(self, context, newlight = False, dupli_name = "Lumiere"):
+	"""Create a blender light spot"""
+	
+#---Create the light mesh object for the duplication of the lamp
+	if newlight:
+		dupli = get_object(context, self.lightname)
+
+	else:
+		dupli = create_dupli(self, context, dupli_name)
+
+#---Create the spot lamp
+	bpy.ops.object.lamp_add(type='SPOT', view_align=False, location=(0,0,0))
+	context.active_object.data.name = "LAMP_" + dupli.data.name 
+	lamp = context.object
+	lamp.name = "LAMP_" + dupli.data.name 
+	lamp.data.cycles.use_multiple_importance_sampling = True
+	lamp.Lumiere.typlight = "Spot"
+	lamp.Lumiere.lightname = context.active_object.data.name
+
+#---Constraints
+	bpy.ops.object.constraint_add(type='COPY_TRANSFORMS')
+	lamp.constraints["Copy Transforms"].target = bpy.data.objects[dupli.name]
+
+#---Parent the blender lamp to the dupli mesh
+	context.scene.objects.active = bpy.data.objects[dupli.name]
+	lamp.parent = dupli
+	
+#---Create nodes
+	if not newlight:	
+		create_lamp_nodes(self, context, lamp)
+
+	return(dupli)
+
+#########################################################################################################
+
+#########################################################################################################
+def create_light_sky(self, context, dupli_name = "Lumiere"):
+	"""Create light sky"""
+	
+#---Create a new world if not exist
+	world = ""
+	for w in bpy.data.worlds:
+		if w.name == "Lumiere_world":
+			world = bpy.data.worlds['Lumiere_world']
+			
+	if world == "":
+		context.scene.world = bpy.data.worlds.new("Lumiere_world")
+		world = context.scene.world
+
+	world.use_nodes= True
+	world.node_tree.nodes.clear() 
+
+#---Add a lamp for the sun and drive the sky texture
+	cobj = create_light_sun(self, context, dupli_name = dupli_name)		
+
+#---Use multiple importance sampling for the world
+	context.scene.world.cycles.sample_as_light = True
+	cobj.data.cycles.use_multiple_importance_sampling = True
+	
+#---Shaders
+	sky = world.node_tree.nodes.new("ShaderNodeTexSky")
+	background = world.node_tree.nodes.new('ShaderNodeBackground')
+	output = world.node_tree.nodes.new("ShaderNodeOutputWorld")
+
+#---Links
+	world.node_tree.links.new(sky.outputs[0], background.inputs[0])
+	world.node_tree.links.new(background.outputs[0], output.inputs[0])
+	background.inputs[1].default_value = 2.0
+
+#---UI
+	sky.location = (-200,0)
+	output.location = (200,0)
+
+	cobj.Lumiere.typlight = "Sky"
+
+	return(cobj)
+#########################################################################################################
+
+#########################################################################################################
+def create_light_area(self, context, newlight = False, dupli_name = "Lumiere"):
+	"""Create a blender light area"""
+	
+#---Create the light mesh object for the duplication of the lamp
+	if newlight:
+		dupli = get_object(context, self.lightname)
+	else:
+		dupli = create_dupli(self, context, dupli_name)
+		
+#---Create the area lamp
+	bpy.ops.object.lamp_add(type='AREA', view_align=False, location=(0,0,0))
+	lamp = bpy.context.object
+	lamp.name = "LAMP_" + dupli.data.name
+	lamp.data.shape = 'RECTANGLE'
+	lamp.data.name = "LAMP_" + dupli.data.name 
+	lamp.data.cycles.use_multiple_importance_sampling = True
+	lamp.Lumiere.typlight = "Area"
+	lamp.Lumiere.lightname = context.active_object.data.name
+
+#---Add constraints COPY LOCATION + ROTATION
+	lamp.constraints.new(type='COPY_LOCATION')
+	lamp.constraints["Copy Location"].target = bpy.data.objects[dupli.name]
+	lamp.constraints["Copy Location"].show_expanded = False
+	lamp.constraints.new(type='COPY_ROTATION')
+	lamp.constraints["Copy Rotation"].show_expanded = False
+	lamp.constraints["Copy Rotation"].target = bpy.data.objects[dupli.name]
+
+#---Parent the blender lamp to the dupli mesh
+	context.scene.objects.active = bpy.data.objects[dupli.name]
+	lamp.parent = dupli
+	
+#---Create nodes
+	if not newlight:	
+		create_lamp_nodes(self, context, lamp)
+	
+	return(dupli)
+	
+#########################################################################################################
+
+#########################################################################################################
+def create_dupli(self, context, dupli_name = "Lumiere"):
+	"""Single point mesh for duplication of the blender lamp and projector"""
+	
+	verts = [(0, 0, 0)]
+
+#---Create object
+	i = 0
+	split_name = dupli_name.split(".")
+	if split_name[0] in context.scene.objects:
+		while dupli_name in context.scene.objects:
+			i += 1
+			dupli_name = split_name[0] + "." + str(i).zfill(3)
+
+	me = bpy.data.meshes.new(name= "Lumiere")
+	dupli = bpy.data.objects.new(dupli_name, me)
+	dupli.select = True
+	context.scene.objects.link(dupli)
+	me.from_pydata(verts, [], [])
+	me.update()
+
+	context.scene.objects.active = bpy.data.objects[dupli_name]
+
+	dupli = context.object
+	dupli.Lumiere.typlight = context.scene.Lumiere.typlight
+	dupli.Lumiere.lightname = dupli.data.name 
+	dupli.constraints.new(type='TRACK_TO')
+
+#---Change the visibility 
+	dupli.draw_type = 'TEXTURED'
+	dupli.show_transparent = True
+	dupli.show_wire = True
+	dupli.cycles_visibility.camera = False
+	dupli.cycles_visibility.diffuse = True
+	dupli.cycles_visibility.glossy = True
+	dupli.cycles_visibility.transmisison = False
+	dupli.cycles_visibility.scatter = False
+	dupli.cycles_visibility.shadow = True
+	dupli.dupli_type = 'VERTS'
+	
+	return (dupli)
+
+#########################################################################################################
+
+#########################################################################################################
+def create_lamp_nodes(self, context, lamp):
+	"""Cysles material nodes for blender lights"""
+	
+#---Emission
+	emit = lamp.data.node_tree.nodes["Emission"]
+	emit.inputs[1].default_value = lamp.Lumiere.energy
+	emit.location = (120.0, 320.0)	
+	
+#---Blackbody : Horizon daylight kelvin temperature for sun
+	blackbody = lamp.data.node_tree.nodes.new("ShaderNodeBlackbody")
+	blackbody.inputs[0].default_value = 4000
+	blackbody.location = (-100.0, 480.0)	
+	
+#---Color Ramp Node for area
+	colramp = lamp.data.node_tree.nodes.new(type="ShaderNodeValToRGB")
+	colramp.color_ramp.elements[0].color = (1,1,1,1)
+	# lamp.data.node_tree.links.new(colramp.outputs[0], emit.inputs[0])
+	colramp.location = (-180.0, 380.0)	
+	
+#---Light Falloff
+	falloff = lamp.data.node_tree.nodes.new("ShaderNodeLightFalloff")
+	falloff.inputs[0].default_value = lamp.Lumiere.energy
+	if lamp.data.type != "SUN":
+		lamp.data.node_tree.links.new(falloff.outputs[1], emit.inputs[1])
+	falloff.location = (-100.0, 140.0)	
+
+#---Dot Product
+	dotpro = lamp.data.node_tree.nodes.new("ShaderNodeVectorMath")
+	dotpro.operation = 'DOT_PRODUCT'
+	lamp.data.node_tree.links.new(dotpro.outputs[1], colramp.inputs[0])
+	dotpro.location = (-360.0, 320.0)
+
+#---Geometry Node
+	geom = lamp.data.node_tree.nodes.new(type="ShaderNodeNewGeometry")
+	lamp.data.node_tree.links.new(geom.outputs[1], dotpro.inputs[0])
+	lamp.data.node_tree.links.new(geom.outputs[4], dotpro.inputs[1])
+	geom.location = (-540.0, 360.0)		   
+
+#########################################################################################################
+
+#########################################################################################################
+def create_lamp_grid(self, context):
+	"""Create a grid of lights and projector with the repetition of duplicators"""
+	
+	verts = []
+	edges = []
+	faces = []
+	listvert = []
+	listfaces = []
+		
+	# obj_light = context.active_object
+	obj_light = get_object(context, self.lightname)
+	if obj_light.Lumiere.nbcol < 1: obj_light.Lumiere.nbcol = 1
+	if obj_light.Lumiere.nbrow < 1: obj_light.Lumiere.nbrow = 1
+
+	gapx = obj_light.Lumiere.gapx
+	gapy = obj_light.Lumiere.gapy
+	widthx = .01 #* obj_light.Lumiere.scale_x
+	widthy = .01 #* obj_light.Lumiere.scale_y
+	left = -((widthx * (obj_light.Lumiere.nbcol-1)) + (gapx * (obj_light.Lumiere.nbcol-1)) ) / 2
+	right = left + widthx
+	start = -((widthy * (obj_light.Lumiere.nbrow-1)) + (gapy * (obj_light.Lumiere.nbrow-1))) / 2
+	end = start + widthy
+	i = 0
+
+#---Get the material
+	mat_name, mat = get_mat_name(obj_light.data.name)
+	
+	for x in range(obj_light.Lumiere.nbcol):
+	#---Create Verts, Faces on X axis
+		nbvert = len(verts)
+		verts.extend([(left,start,0)])
+		start2 = end + gapy
+		end2 = start2 + widthy
+
+		for y in range(obj_light.Lumiere.nbrow-1):
+		#---Create Verts, Faces on Z axis
+			nbvert = len(verts)
+			verts.extend([(left,start2,0)])
+			start2 = end2 + gapy
+			end2 = start2 + widthy
+
+		left = right + gapx
+		right = left + widthx
+
+#---Get the mesh
+	old_mesh = obj_light.data
+	mesh = bpy.data.meshes.new(name=obj_light.name)
+ 
+#---Update the mesh
+	mesh.from_pydata(verts, [], [])
+	mesh.update(calc_edges=True)
+	
+#---Retrieve the name and delete the old mesh
+	for i in bpy.data.objects:
+		if i.data == old_mesh:
+			i.data = mesh
+	name = old_mesh.name
+	old_mesh.user_clear()
+	bpy.data.meshes.remove(old_mesh)
+	mesh.name = name	
+	
+	context.object.draw_type = 'WIRE'
+	context.object.show_transparent = True
+	context.object.show_wire = True
+
+	cobj = context.active_object
+	cobj.Lumiere.lightname = cobj.data.name
+	context.object.cycles_visibility.camera = False
+
+#########################################################################################################
+
+#########################################################################################################
+def create_light_env_widget(self, context, dupli):
+	"""Create a simple widget to indicate the interactive target for the environment light"""
+	
+#---Create widget
+	size = .8
+	verts = [(0.0*size, 0.29663604497909546*size, 0.0*size), (-0.05787081643939018*size, 0.2909362316131592*size, 0.0*size), (-0.11351769417524338*size, 0.27405592799186707*size, 0.0*size), (-0.16480213403701782*size, 0.24664384126663208*size, 0.0*size), (-0.2097533494234085*size, 0.2097533494234085*size, 0.0*size), (-0.24664384126663208*size, 0.16480213403701782*size, 0.0*size), (-0.27405592799186707*size, 0.11351767927408218*size, 0.0*size), (-0.2909362316131592*size, 0.05787082761526108*size, 0.0*size), (-0.29663604497909546*size, 2.2395397536456585e-08*size, 0.0*size), (-0.2909362316131592*size, -0.0578707791864872*size, 0.0*size), (-0.27405598759651184*size, -0.1135176420211792*size, 0.0*size), (-0.24664384126663208*size, -0.16480213403701782*size, 0.0*size), (-0.2097533494234085*size, -0.2097533494234085*size, 0.0*size), (-0.16480213403701782*size, -0.24664384126663208*size, 0.0*size), (-0.1135176420211792*size, -0.27405592799186707*size, 0.0*size), (-0.05787074938416481*size, -0.2909362316131592*size, 0.0*size), (9.665627942467836e-08*size, -0.29663604497909546*size, 0.0*size), (0.05787093564867973*size, -0.2909362018108368*size, 0.0*size), (0.11351781338453293*size, -0.2740558981895447*size, 0.0*size), (0.16480228304862976*size, -0.24664373695850372*size, 0.0*size), (0.20975348353385925*size, -0.20975323021411896*size, 0.0*size), (0.24664399027824402*size, -0.1648019701242447*size, 0.0*size), (0.2740560472011566*size, -0.11351746320724487*size, 0.0*size), (0.29093629121780396*size, -0.05787056311964989*size, 0.0*size), (0.29663604497909546*size, 2.864314581074723e-07*size, 0.0*size), (0.2909362018108368*size, 0.057871121913194656*size, 0.0*size), (0.2740557789802551*size, 0.11351799219846725*size, 0.0*size), (0.24664364755153656*size, 0.1648024320602417*size, 0.0*size), (0.20975308120250702*size, 0.2097536027431488*size, 0.0*size), (0.16480180621147156*size, 0.24664407968521118*size, 0.0*size), (0.11351729184389114*size, 0.2740561366081238*size, 0.0*size), (0.05787036940455437*size, 0.29093629121780396*size, 0.0*size), (0.0*size, 0.5299842357635498*size, 0.0*size), (-0.20281623303890228*size, 0.48964163661003113*size, 0.0*size), (-0.3747554123401642*size, 0.3747554123401642*size, 0.0*size), (-0.48964163661003113*size, 0.2028162032365799*size, 0.0*size), (-0.5299842357635498*size, 4.001270070830287e-08*size, 0.0*size), (-0.48964163661003113*size, -0.20281609892845154*size, 0.0*size), (-0.3747554123401642*size, -0.3747554123401642*size, 0.0*size), (-0.20281609892845154*size, -0.4896417260169983*size, 0.0*size), (1.726908180899045e-07*size, -0.5299842357635498*size, 0.0*size), (0.202816441655159*size, -0.48964157700538635*size, 0.0*size), (0.37475571036338806*size, -0.37475523352622986*size, 0.0*size), (0.48964181542396545*size, -0.20281578600406647*size, 0.0*size), (0.5299842357635498*size, 5.117523755870934e-07*size, 0.0*size), (0.4896414279937744*size, 0.20281675457954407*size, 0.0*size), (0.37475499510765076*size, 0.3747558891773224*size, 0.0*size), (0.20281550288200378*size, 0.4896419644355774*size, 0.0*size), ]
+	edges = [(1, 0), (2, 1), (3, 2), (4, 3), (5, 4), (6, 5), (7, 6), (8, 7), (9, 8), (10, 9), (11, 10), (12, 11), (13, 12), (14, 13), (15, 14), (16, 15), (17, 16), (18, 17), (19, 18), (20, 19), (21, 20), (22, 21), (23, 22), (24, 23), (25, 24), (26, 25), (27, 26), (28, 27), (29, 28), (30, 29), (31, 30), (0, 31), (0, 32), (2, 33), (4, 34), (6, 35), (8, 36), (10, 37), (12, 38), (14, 39), (16, 40), (18, 41), (20, 42), (22, 43), (24, 44), (26, 45), (28, 46), (30, 47), ]
+
+#---Get the mesh if already exist
+	world_name = "WORLD_" + dupli.data.name
+	if world_name in bpy.data.meshes:
+		mesh = bpy.data.meshes[world_name]
+		bpy.data.meshes.remove(mesh)
+	
+#---Create the mesh
+	mesh = bpy.data.meshes.new(world_name)
+	mesh.from_pydata(verts, edges, [])
+	mesh.update(calc_edges=True)
+	object_data_add(context, mesh)
+	cobj = context.object
+	cobj.Lumiere.lightname = cobj.data.name
+	cobj.draw_type = 'WIRE'
+	
+#---Add constraints COPY LOCATION + ROTATION
+	cobj.constraints.new(type='COPY_LOCATION')
+	cobj.constraints["Copy Location"].target = bpy.data.objects[dupli.name]
+	cobj.constraints["Copy Location"].show_expanded = False
+	cobj.constraints.new(type='COPY_ROTATION')
+	cobj.constraints["Copy Rotation"].show_expanded = False
+	cobj.constraints["Copy Rotation"].target = bpy.data.objects[dupli.name]
+	
+	cobj.Lumiere.typlight = "Env"
+	
+#---Parent the blender lamp to the light mesh
+	cobj.parent = dupli
+	cobj.matrix_parent_inverse = dupli.matrix_world.inverted()	
+
+
+#########################################################################################################
+
+#########################################################################################################
+class EditLight(bpy.types.Operator):
+	"""Edit the light : Interactive mode"""
+	
 	bl_description = "Edit the light :\n"+\
 					 "- Target a new location\n- Rotate\n- Scale\n- Transform to grid"
-	bl_idname = "object.add_light"
+	bl_idname = "object.edit_light"
 	bl_label = "Add Light"
 	# bl_options = {'GRAB_CURSOR', 'BLOCKING', 'UNDO', 'INTERNAL'}
-	bl_options = {"UNDO"}
+	bl_options = {'REGISTER', 'UNDO'}
 
 	#-------------------------------------------------------------------
 	from_panel = bpy.props.BoolProperty(default=False)
@@ -2129,7 +2121,10 @@ class AddLight(bpy.types.Operator):
 	k_press = 0
 	save_range =""
 	#-------------------------------------------------------------------
-	
+
+	def check(self, context):
+		return True
+
 	def check_region(self,context,event):
 		if context.area != None:
 			if context.area.type == "VIEW_3D" :
@@ -2159,9 +2154,10 @@ class AddLight(bpy.types.Operator):
 			if self.in_view_3d and context.area == self.lumiere_area:
 			
 				self.rv3d = context.region_data
-				self.region = context.region
-				
+				self.region = context.region			
+					
 			#---Allow navigation
+				
 				if event.type in {'MIDDLEMOUSE'} or event.type.startswith("NUMPAD"): 
 					return {'PASS_THROUGH'}
 					
@@ -2196,7 +2192,8 @@ class AddLight(bpy.types.Operator):
 
 				str1 ="Range: " + context.scene.Key_Distance + " || " + \
 					  "Energy: " + context.scene.Key_Strength + " || "	+ \
-					  "reflect Angle: " + context.scene.Key_Normal + " || " + \
+					  "Angle: " + context.scene.Key_Normal + " || " + \
+					  "Invert: " + context.scene.Key_Invert + " || "	+ \
 					  "Fallof: " + context.scene.Key_Falloff + " || " + \
 					  "Orbit: " + context.scene.Key_Orbit + " || "
 				str2 =" "
@@ -2229,11 +2226,11 @@ class AddLight(bpy.types.Operator):
 							obj_light.constraints['Track To'].influence = 0
 							obj_light.location = self.initial_location
 							remove_constraint(self, context, obj_light.data.name)	
-						else:
-							picker = object_picker(self, context, coord)
-							if picker is not None: 
-								if bpy.data.objects[picker].data.name.startswith("Lumiere"): 
-									return {'PASS_THROUGH'}
+						# else:
+							# picker = object_picker(self, context, coord)
+							# if picker is not None: 
+								# if "Lumiere" in bpy.data.objects[picker].data.name : 
+									# return {'PASS_THROUGH'}
 
 						context.area.header_text_set()
 						context.window.cursor_modal_set("DEFAULT")
@@ -2260,8 +2257,9 @@ class AddLight(bpy.types.Operator):
 				return{'FINISHED'}
 
 			return {'PASS_THROUGH'}
-		except Exception:
+		except Exception as error:
 			if event.type not in {'RIGHTMOUSE', 'ESC'}:
+				print("Error to report : ", error)
 				context.window.cursor_modal_set("DEFAULT")
 				context.area.header_text_set()
 				self.remove_handler()
@@ -2273,6 +2271,13 @@ class AddLight(bpy.types.Operator):
 				ob.select = False
 		return {'FINISHED'}
 
+	def draw(self, context):
+		layout = self.layout
+		row = layout.row(align = True)
+		row1 = row.split(align=True)
+		row1.label("Shading")
+		row2 = row.split(align=True)
+		
 	def remove_handler(self):
 		if self._handle:
 			bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
@@ -2326,7 +2331,12 @@ class AddLight(bpy.types.Operator):
 
 #########################################################################################################
 def transform_light(self, context, event, obj_light):
-	"""Transform the selected light"""
+	"""
+	Transform the selected light in the interactive mode
+	- self.editmode true : interactive mode is on
+	- self.modif true : A key has been pressed
+	- self.from_panel true : call this operator from the ui panel
+	"""
 	
 #---Get the lamp or the softbox link to the dupli
 	lamp_or_softbox = get_lamp(context, obj_light.Lumiere.lightname)
@@ -2361,7 +2371,6 @@ def transform_light(self, context, event, obj_light):
 		self.modif = False
 
 		if self.from_panel:
-			self.modif = False
 			self.editmode = False
 			self.from_panel = False
 			context.area.header_text_set()
@@ -2626,12 +2635,16 @@ def transform_light(self, context, event, obj_light):
 				remove_constraint(self, context, obj_light.data.name)					
 			
 	#---Change the view based on the normal of the object
-		elif event.type == context.scene.Key_Normal and event.value == 'PRESS':	
+		elif event.type == context.scene.Key_Normal and event.value == 'PRESS': 
 			reflect_angle_idx = int(obj_light.Lumiere.reflect_angle)+1
 			if reflect_angle_idx > 1:
 				reflect_angle_idx = 0
 			obj_light.Lumiere.reflect_angle = str(reflect_angle_idx)
 			self.reflect_angle = "View" if reflect_angle_idx == 0 else "Normal"
+			
+	#---Invert the raycast 
+		elif event.type == context.scene.Key_Invert and event.value == 'PRESS': 
+			obj_light.Lumiere.invert_ray = not obj_light.Lumiere.invert_ray
 
 	#---Rotate the light on the local axis.
 		elif event.type == context.scene.Key_Rotate and event.value == 'PRESS':
@@ -2816,6 +2829,11 @@ class CreateLight(bpy.types.Operator):
 							elif context.scene.Lumiere.typlight == "Env":
 								obj_light = create_light_env(self, context)
 								obj_light.Lumiere.energy = 1
+												
+						#---Import 
+							elif context.scene.Lumiere.typlight == "Import":
+								bpy.ops.object.import_light()
+
 						
 					#---Raycast the light
 						raycast_light(self, obj_light.Lumiere.range, context, coord)
@@ -2873,18 +2891,18 @@ class CreateLight(bpy.types.Operator):
 							obj_light.constraints['Track To'].influence = 0
 							obj_light.location = self.initial_location
 							remove_constraint(self, context, obj_light.data.name)	
-						else:
-							picker = object_picker(self, context, coord)
-							if picker is not None: 
-								if bpy.data.objects[picker].data.name.startswith("Lumiere"): 
-									return {'PASS_THROUGH'}
+						# else:
+							# picker = object_picker(self, context, coord)
+							# if picker is not None: 
+								# if "Lumiere" in bpy.data.objects[picker].data.name : 
+									# return {'PASS_THROUGH'}
 
 						context.area.header_text_set()
 						context.window.cursor_modal_set("DEFAULT")
 						self.remove_handler()
 						return {'FINISHED'}
 						
-				if event.type in {'ESC'}:
+				elif event.type in {'ESC'}:
 					context.area.header_text_set()
 					context.window.cursor_modal_set("DEFAULT")
 					self.remove_handler()
@@ -2904,8 +2922,9 @@ class CreateLight(bpy.types.Operator):
 				return{'FINISHED'}
 
 			return {'PASS_THROUGH'}
-		except Exception:
+		except Exception as error:
 			if event.type not in {'RIGHTMOUSE', 'ESC'}:
+				print("Error to report : ", error)
 				context.window.cursor_modal_set("DEFAULT")
 				context.area.header_text_set()
 				self.remove_handler()
@@ -2947,9 +2966,9 @@ class CreateLight(bpy.types.Operator):
 #########################################################################################################
 
 #########################################################################################################
-
 def update_sky(self, context):
-
+	"""Update the sky node with from the targeted angle"""
+	
 #---Get the duplivert parent of the sun lamp 
 	dupli = context.active_object
 
@@ -3045,6 +3064,8 @@ def reset_options(self, context):
 
 #########################################################################################################
 def update_rotation_hdri(self, context):
+	"""Update the rotation of the environment image texture"""
+	
 	cobj = get_object(context, self.lightname)
 	world = context.scene.world
 	mapping = world.node_tree.nodes['Mapping']
@@ -3062,6 +3083,8 @@ def update_rotation_hdri(self, context):
 
 #########################################################################################################
 def update_rotation_hdri_lock(self, context):
+	"""Lock / Unlock the rotatin of the environment image texture"""
+	
 	cobj = get_object(context, self.lightname)
 	world = context.scene.world
 	mapping = world.node_tree.nodes['Mapping']
@@ -3075,6 +3098,8 @@ def update_rotation_hdri_lock(self, context):
 
 #########################################################################################################
 def update_rotation_img(self, context):
+	"""Update the rotation of the background image texture"""
+	
 	cobj = get_object(context, self.lightname)
 	world = context.scene.world
 	mapping = world.node_tree.nodes['Mapping']
@@ -3087,6 +3112,8 @@ def update_rotation_img(self, context):
 
 #########################################################################################################
 def update_rotation_img_lock(self, context):
+	"""Lock / Unlock the rotatin of the background image texture"""
+	
 	cobj = get_object(context, self.lightname)
 	world = context.scene.world
 	mapping = world.node_tree.nodes['Mapping']
@@ -3100,7 +3127,8 @@ def update_rotation_img_lock(self, context):
 
 #########################################################################################################
 def update_lamp(self, context, cobj):
-				
+	"""Update the material nodes of the blender lights"""
+	
 	mat = bpy.data.lamps["LAMP_" + self.lightname]
 		
 	falloff = mat.node_tree.nodes["Light Falloff"]
@@ -3131,7 +3159,8 @@ def update_lamp(self, context, cobj):
 
 #########################################################################################################
 def update_mat(self, context):
-
+	"""Update the material nodes of the lights"""
+	
 #---Get the duplivert
 	cobj = get_object(context, self.lightname)
 
@@ -3247,11 +3276,16 @@ def update_mat(self, context):
 			mix1 = mat.node_tree.nodes["Mix Shader"]
 			colramp = mat.node_tree.nodes['ColorRamp']
 			coord = mat.node_tree.nodes['Texture Coordinate']
+			mapping = mat.node_tree.nodes['Mapping']
 
+			if cobj.Lumiere.rotate_ninety:
+				mapping.rotation[2] = math.radians(90)
+			else:
+				mapping.rotation[2] = 0
+				
 		#---Image Texture options
 			if cobj.Lumiere.img_name != "" and cobj.Lumiere.texture_type =="Texture" :
 				combine = mat.node_tree.nodes["Combine RGB"]
-				mapping = mat.node_tree.nodes['Mapping']
 				sepRGB =  mat.node_tree.nodes['Separate RGB']
 				mat.node_tree.links.new(coord.outputs[0], mapping.inputs[0])
 				mat.node_tree.links.new(mapping.outputs[0],	 sepRGB.inputs[0])					
@@ -3316,7 +3350,6 @@ def update_mat(self, context):
 				
 		#---Gradients
 			if cobj.Lumiere.texture_type == "Gradient" and not cobj.Lumiere.reflector:				
-				mapping =  mat.node_tree.nodes['Mapping']
 				sepRGB =  mat.node_tree.nodes['Separate RGB']
 				grad = mat.node_tree.nodes['Gradient Texture']
 				mat.node_tree.links.new(mapping.outputs[0],	 grad.inputs[0])
@@ -3410,7 +3443,7 @@ def get_object(context, lightname):
 
 #########################################################################################################
 def add_driver(source, target, prop, dataPath,index = -1, negative = False, func = ''):
-	''' Add driver to source prop (at index), driven by target dataPath '''
+	""" Add driver to source prop (at index), driven by target dataPath """
 
 	if index != -1:
 		d = source.driver_add(prop, index).driver
@@ -3448,7 +3481,7 @@ def get_lamp(context, lightname):
 
 #########################################################################################################
 def get_delete_lamp(context, lightname):
-	"""Return the lamp with this name"""
+	"""Change to option : return the lamp with this name"""
 	
 	cobj = get_object(context, lightname)
 
@@ -3640,9 +3673,10 @@ def update_type_light(self, context):
 		if obj_light.Lumiere.newtyplight == "Panel":
 			obj_light.Lumiere.typlight = obj_light.Lumiere.newtyplight
 			context.scene.objects.unlink(lamp_or_softbox)
-			obj_light = create_softbox(self, context, True)
+			obj_light = create_softbox(self, context, newlight = True)
 
 	#---Default blender lamp
+	
 	
 	#---Point
 		elif obj_light.Lumiere.newtyplight == "Point":
@@ -3657,7 +3691,7 @@ def update_type_light(self, context):
 					context.scene.objects.link(lamp)
 					lamp.data.type = 'POINT'
 				else:
-					obj_light = create_light_point(self, context, True)
+					obj_light = create_light_point(self, context, newlight = True)
 					lamp = get_lamp(context, obj_light.Lumiere.lightname)
 					create_lamp_nodes(self, context, lamp)
 				
@@ -3666,6 +3700,7 @@ def update_type_light(self, context):
 				
 			else:
 				lamp_or_softbox.data.type = "POINT"
+			
 			
 	#---Sun
 		elif obj_light.Lumiere.newtyplight == "Sun":
@@ -3680,7 +3715,7 @@ def update_type_light(self, context):
 					context.scene.objects.link(lamp)
 					lamp.data.type = 'SUN'
 				else:
-					obj_light = create_light_sun(self, context, True)
+					obj_light = create_light_sun(self, context, newlight = True)
 					lamp = get_lamp(context, obj_light.Lumiere.lightname)
 					create_lamp_nodes(self, context, lamp)
 
@@ -3705,7 +3740,7 @@ def update_type_light(self, context):
 					context.scene.objects.link(lamp)
 					lamp.data.type = 'SPOT'
 				else:
-					obj_light = create_light_spot(self, context, True)
+					obj_light = create_light_spot(self, context, newlight = True)
 					lamp = get_lamp(context, obj_light.Lumiere.lightname)
 					create_lamp_nodes(self, context, lamp)
 				
@@ -3714,9 +3749,8 @@ def update_type_light(self, context):
 				
 			else:
 				lamp_or_softbox.data.type = "SPOT"
-
 				
-	
+
 	#---Area
 		elif obj_light.Lumiere.newtyplight == "Area":
 			if oldtyplight != "Env":
@@ -3731,7 +3765,7 @@ def update_type_light(self, context):
 					lamp.data.type = 'AREA'
 					lamp.data.shape = 'RECTANGLE'
 				else:
-					obj_light = create_light_area(self, context, True)
+					obj_light = create_light_area(self, context, newlight = True)
 					lamp = get_lamp(context, obj_light.Lumiere.lightname)
 					create_lamp_nodes(self, context, lamp)
 				
@@ -3742,7 +3776,7 @@ def update_type_light(self, context):
 				lamp_or_softbox.data.type = "AREA"
 				lamp_or_softbox.data.shape = 'RECTANGLE'
 
-	
+
 	#---Environment Background
 		if oldtyplight == "Env":
 			obj_light.Lumiere.typlight = oldtyplight
@@ -3757,19 +3791,7 @@ def update_type_light(self, context):
 				lamp.parent = obj_light
 
 		update_mat(self, context)
-			
-#########################################################################################################
-
-#########################################################################################################
-def translate_bottom(self, context):
-	"""Translate the light on the origin"""
-
-	obj_light = get_lamp(context, self.lightname)
-	#http://blender.stackexchange.com/questions/73698/translate-object-using-lowest-z-value-python
-	lowest_pt = min([(obj_light.matrix_world * v.co).z for v in obj_light.data.vertices])
-	obj_light.location.z -= lowest_pt
 	
-									
 #########################################################################################################
 
 #########################################################################################################
@@ -3824,7 +3846,19 @@ def update_close_projector(self, context):
 #########################################################################################################
 
 #########################################################################################################									
+def update_softbox_smooth(self, context):
+	"""Update the smooth value for edges of the softbox"""
+	
+	obj_light = get_lamp(context, self.lightname)
+	dupli = get_object(context, self.lightname)
+	obj_light.modifiers["Bevel"].width = dupli.Lumiere.softbox_smooth
+
+#########################################################################################################
+
+#########################################################################################################									
 def update_projector_mat(self, context):
+	"""Update the cycles material nodes for the projector"""
+	
 	obj_light = get_object(context, self.lightname) 
 
 	projector = bpy.data.objects["PROJECTOR_" + obj_light.data.name]
@@ -3877,6 +3911,8 @@ def update_projector_mat(self, context):
 
 #########################################################################################################
 def add_remove_projector(self, context):
+	"""Add or remove the front projector and the back projector"""
+	
 	obj_light = get_object(context, self.lightname) 
 	
 	if obj_light.Lumiere.projector:
@@ -3903,9 +3939,11 @@ def add_remove_projector(self, context):
 
 #########################################################################################################
 class SCENE_OT_select_target(Operator):
-	"""Select the target object using eyedropper"""
+	"""Select one only target object using eyedropper"""
 	
 	bl_idname = "object.select_target"
+	bl_description = "Select the only object you want to target.\n"+\
+					 "Will ignore all the other objects but this one."
 	bl_label = "Select target"
 	act_light = bpy.props.StringProperty()
 
@@ -3941,7 +3979,8 @@ class SCENE_OT_select_target(Operator):
 				
 			return {'RUNNING_MODAL'}
 			
-		except:
+		except Exception as error:
+			print("Error to report : ", error)		
 			bpy.context.window.cursor_modal_set("DEFAULT")
 			bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
 			return {'FINISHED'}
@@ -3958,6 +3997,7 @@ class SCENE_OT_select_target(Operator):
 #########################################################################################################
 class SCENE_OT_select_pixel(Operator):
 	"""Align the environment background with the selected pixel"""
+	
 	bl_idname = "object.select_pixel"
 	bl_description = "Target the selected pixel from the image texture and compute the rotation.\n"+\
 					 "Use this to align a sun or a lamp from your image."
@@ -3983,90 +4023,143 @@ class SCENE_OT_select_pixel(Operator):
 		context.area.spaces.active.image = bpy.data.images[self.img_name]
   
 	def modal(self, context, event):
-		bpy.context.area.tag_redraw()
-		bpy.context.window.cursor_modal_set("EYEDROPPER")
+		context.area.tag_redraw()
+		context.window.cursor_modal_set("EYEDROPPER")
 		
 		try:
-
-		#---Allow navigation
-			if event.type in {'MIDDLEMOUSE'} or event.type.startswith("NUMPAD"): 
-				return {'PASS_THROUGH'}
+			if context.area == self.lumiere_area:
 				
-		#---Zoom Keys
-			elif (event.type in	 {'WHEELUPMOUSE', 'WHEELDOWNMOUSE'} and not 
-			   (event.ctrl or event.shift or event.alt)):
-				return{'PASS_THROUGH'}	
+			#---Allow navigation
+				if event.type in {'MIDDLEMOUSE'} or event.type.startswith("NUMPAD"): 
+					return {'PASS_THROUGH'}
 					
-			elif event.type == 'MOUSEMOVE':
-				for area in bpy.context.screen.areas:
-					if area.type == 'IMAGE_EDITOR':
-						for region in area.regions:
-							if region.type == 'WINDOW':
-								mouse_x = event.mouse_x - region.x
-								mouse_y = event.mouse_y - region.y
-								uv = region.view2d.region_to_view(mouse_x, mouse_y)
-							#--- Source : https://blenderartists.org/forum/showthread.php?292866-Pick-the-color-of-a-pixel-in-the-Image-Editor
-								if not math.isnan(uv[0]): 
-									x = int(self.img_size_x * uv[0]) % self.img_size_x
-									y = int(self.img_size_y * uv[1]) % self.img_size_y
-									self.mouse_path = (x,y)
+			#---Zoom Keys
+				elif (event.type in	 {'WHEELUPMOUSE', 'WHEELDOWNMOUSE'} and not 
+				   (event.ctrl or event.shift or event.alt)):
+					return{'PASS_THROUGH'}	
+			
+				elif event.type == 'MOUSEMOVE':
+					for area in context.screen.areas:
+						if area == self.lumiere_area and area.type == 'IMAGE_EDITOR':
+							for region in area.regions:
+								if region.type == 'WINDOW':
+									mouse_x = event.mouse_x - region.x
+									mouse_y = event.mouse_y - region.y
+									uv = region.view2d.region_to_view(mouse_x, mouse_y)
+								#--- Source : https://blenderartists.org/forum/showthread.php?292866-Pick-the-color-of-a-pixel-in-the-Image-Editor
+									if not math.isnan(uv[0]): 
+										x = int(self.img_size_x * uv[0]) % self.img_size_x
+										y = int(self.img_size_y * uv[1]) % self.img_size_y
+										self.mouse_path = (x,y)
 
-			elif event.type == 'LEFTMOUSE':
-				return{'PASS_THROUGH'}	
-				
-			elif event.type == 'RIGHTMOUSE':
-				obj_light = bpy.data.objects[self.act_light]
-				rot_x = ((self.mouse_path[0] * 360) / self.img_size_x) - 90
-				rot_y = ((self.mouse_path[1] * 180) / self.img_size_y)
-				if self.img_type == "HDRI":
-					obj_light.Lumiere.hdri_rotation = rot_x - 180 + math.degrees(obj_light.rotation_euler.z)
-					obj_light.Lumiere.hdri_rotationy = rot_y - 180
-					obj_light.Lumiere.hdri_pix_rot = rot_x - 180
-					obj_light.Lumiere.hdri_pix_roty = rot_y - 180
-				else:
-					obj_light.Lumiere.img_rotation = rot_x - 180 + math.degrees(obj_light.rotation_euler.z)
-					obj_light.Lumiere.img_pix_rot = rot_x - 180				
+				elif event.type == 'LEFTMOUSE':
+					return{'PASS_THROUGH'}	
 					
-				bpy.context.window.cursor_modal_set("DEFAULT")
-				self.remove_handler()
-				if context.area.type == 'IMAGE_EDITOR':
-					context.area.type = 'VIEW_3D'
-				return {'FINISHED'}
-				
-			elif event.type == 'ESC':
-				bpy.context.window.cursor_modal_set("DEFAULT")
-				context.area.header_text_set()
-				self.remove_handler()
-				if context.area.type == 'IMAGE_EDITOR':
-					context.area.type = 'VIEW_3D'	
-				return {'CANCELLED'}
-				
-			return {'RUNNING_MODAL'}
+				elif event.type == 'RIGHTMOUSE':
+					obj_light = bpy.data.objects[self.act_light]
+					rot_x = ((self.mouse_path[0] * 360) / self.img_size_x) - 90
+					rot_y = ((self.mouse_path[1] * 180) / self.img_size_y)
+					if self.img_type == "HDRI":
+						obj_light.Lumiere.hdri_rotation = rot_x - 180 + math.degrees(obj_light.rotation_euler.z)
+						obj_light.Lumiere.hdri_rotationy = rot_y - 180
+						obj_light.Lumiere.hdri_pix_rot = rot_x - 180
+						obj_light.Lumiere.hdri_pix_roty = rot_y - 180
+					else:
+						obj_light.Lumiere.img_rotation = rot_x - 180 + math.degrees(obj_light.rotation_euler.z)
+						obj_light.Lumiere.img_pix_rot = rot_x - 180				
+						
+					bpy.context.window.cursor_modal_set("DEFAULT")
+					self.remove_handler()
+					if context.area.type == 'IMAGE_EDITOR':
+						context.area.type = 'VIEW_3D'
+					return {'FINISHED'}
+					
+				elif event.type == 'ESC':
+					bpy.context.window.cursor_modal_set("DEFAULT")
+					context.area.header_text_set()
+					self.remove_handler()
+					if context.area.type == 'IMAGE_EDITOR':
+						context.area.type = 'VIEW_3D'	
+					return {'CANCELLED'}
+					
+				return {'RUNNING_MODAL'}
 
-		except:
+		except Exception as error:
+			print("Error to report : ", error)	
 			bpy.context.window.cursor_modal_set("DEFAULT")
 			context.area.header_text_set()
 			self.remove_handler()
 
 			return {'FINISHED'}
+	
 
 	def invoke(self, context, event):
 		self.mouse_path = [0,0]
-		if context.area.type == 'VIEW_3D':
+		if context.space_data.type == 'VIEW_3D':
 			context.area.type = 'IMAGE_EDITOR'
 			t_panel = context.area.regions[2]
 			n_panel = context.area.regions[3]
 			self.view_3d_region_x = Vector((context.area.x + t_panel.width, context.area.x + context.area.width - n_panel.width))
 
-		self.execute(context)
-		self.img_size = [self.img_size_x, self.img_size_y]
-		args = (self, context, event)
+			self.execute(context)
+			self.img_size = [self.img_size_x, self.img_size_y]
+			args = (self, context, event)
+			self.lumiere_area = context.area
 
-		self._handle = bpy.types.SpaceImageEditor.draw_handler_add(draw_target_px, args, 'WINDOW', 'POST_PIXEL')
-		context.window_manager.modal_handler_add(self)
-
+			context.window_manager.modal_handler_add(self)
+			self._handle = bpy.types.SpaceImageEditor.draw_handler_add(draw_target_px, args, 'WINDOW', 'POST_PIXEL')
+	
+		
 		return {'RUNNING_MODAL'}
 				
+#########################################################################################################
+
+#########################################################################################################
+def export_props_light(self, context, lightname, dupliname):
+	lumiere_dict = {}
+	obj_light = get_lamp(context, lightname)
+	dupli = bpy.data.objects[dupliname]
+	dupli.select = True
+
+	lumiere_dict[dupliname] = {}
+	lumiere_dict[dupliname]['Lumiere'] = dupli["Lumiere"].to_dict()
+	lumiere_dict[dupliname]['rotation'] = tuple(dupli.matrix_world.to_euler())
+	lumiere_dict[dupliname]['scale'] = tuple(obj_light.scale)
+	lumiere_dict[dupliname]['location'] = tuple(dupli.location)
+	lumiere_dict[dupliname]['Lumiere']['definition'] = list(textwrap.wrap(dupli['Lumiere']['definition'], 50)) if "definition" in dupli['Lumiere'] else " "
+	lumiere_dict[dupliname]['group'] = {}
+	for group in bpy.data.objects[dupliname].users_group :
+		# lumiere_dict[dupliname]['group'] = {group.name : list(textwrap.wrap(group["Lumiere"]["definition"], 50))} if "definition" in group["Lumiere"] else {group.name : " "}
+		lumiere_dict[dupliname]['group'].update({group.name : list(textwrap.wrap(group['Lumiere']['definition'], 50))} if "definition" in group['Lumiere'] else {group.name : " "})
+		
+#--- Environment light
+	if obj_light.Lumiere.typlight == "Env":
+		world = bpy.data.worlds['Lumiere_world'].node_tree.nodes
+		if dupli.Lumiere.hdri_name:
+			lumiere_dict[dupliname]['hdri_path'] = bpy.data.images[dupli.Lumiere.hdri_name].filepath
+		lumiere_dict[dupliname]['hdri_col'] = [*world['Background'].inputs[0].default_value]
+		if dupli.Lumiere.img_name:
+			lumiere_dict[dupliname]['img_path'] = bpy.data.images[dupli.Lumiere.img_name].filepath
+		lumiere_dict[dupliname]['img_col'] = [*world['Background.001'].inputs[0].default_value]
+		
+	else:
+		mat_name, mat = get_mat_name(obj_light.data.name)
+		if obj_light.type == "LAMP":
+			lamp = get_lamp(context, obj_light.data.name) 
+			lumiere_dict[dupliname]['smooth'] = lamp.data.node_tree.nodes["Light Falloff"].inputs[1].default_value
+		else:
+			lumiere_dict[dupliname]['smooth'] = mat.node_tree.nodes['Light Falloff'].inputs[1].default_value
+		#---Gradient
+			if dupli.Lumiere.texture_type == "Gradient":
+				lumiere_dict[dupliname]['repeat'] = mat.node_tree.nodes['Math'].inputs[1].default_value 
+				colramp = mat.node_tree.nodes['ColorRamp'].color_ramp	   
+				lumiere_dict[dupliname]['gradient'] = {}
+				lumiere_dict[dupliname]['interpolation'] = colramp.interpolation
+				for i in range(len(colramp.elements)):
+					lumiere_dict[dupliname]['gradient'].update({colramp.elements[i].position: colramp.elements[i].color[:]})
+
+	return(lumiere_dict)
+
 #########################################################################################################
 
 #########################################################################################################
@@ -4079,6 +4172,8 @@ class SCENE_OT_export_light(Operator):
 	act_light = bpy.props.StringProperty()
 	
 	def execute(self, context):
+		current_file_path = __file__
+		current_file_dir = os.path.dirname(__file__)
 		
 		if self.act_light != "": 
 			context.scene.objects.active = bpy.data.objects[self.act_light] 
@@ -4089,80 +4184,516 @@ class SCENE_OT_export_light(Operator):
 						ob.select = False
 						ob.Lumiere.select_light = False
 		else:
-			self.act_light = context.active_object.name
-		obj_light = context.active_object
-		obj_light.select = True
-		
-		my_dict = obj_light["Lumiere"].to_dict()	
-		print("Rotation : ", obj_light.rotation_euler)
-	#http://blender.stackexchange.com/questions/16511/how-can-i-store-and-retrieve-a-custom-list-in-a-blend-file/26164#26164
-		m = json.dumps(my_dict, sort_keys=False, indent=2)
-		# text_block = bpy.data.texts.new('my_storage.json')
-		# text_block.from_string(m) 
+			self.act_light = context.active_object.name 
+			obj_light = context.active_object
+			
+	#---Try to open the Lumiere export dictionary
+		try:
+			with open(current_file_dir + "\\" + "lumiere_dictionary.json", 'r', encoding='utf-8') as file:
+				my_dict = json.load(file)
+				file.close()	
+		except Exception:
+			print("Warning, dict empty, creating a new one.")
+			my_dict = {}
+				
+		lumiere_dict = export_props_light(self, context, obj_light.Lumiere.lightname, self.act_light)
 
-	#http://blender.stackexchange.com/questions/31964/problem-with-paths-in-my-script-relative-to-local-python-file
+		my_dict.update(lumiere_dict)
+		
+		with open(current_file_dir + "\\" + "lumiere_dictionary.json", "w", encoding='utf-8') as file:
+			json.dump(my_dict, file, sort_keys=True, indent=4, ensure_ascii=False)
+
+		file.close()
+		message = "Light exported"
+		self.report({'INFO'}, message)
+		return {'FINISHED'}
+#########################################################################################################
+
+#########################################################################################################
+class SCENE_OT_export_group(Operator):
+	"""Export the current group lights in JSON format"""
+	
+	bl_idname = "object.export_group"
+	bl_label = "Export group"
+	
+	act_group = bpy.props.StringProperty()
+	
+	def execute(self, context):
+		lumiere_dict = {}
 		current_file_path = __file__
 		current_file_dir = os.path.dirname(__file__)
-		print("Path: ", current_file_dir)
-		# print("text_block: ", text_block)
-
-	#http://blender.stackexchange.com/questions/22921/how-to-export-list-of-prop-values-as-txt-to-a-certain-folder-and-how-to-import
-		with open(current_file_dir + "\\" + obj_light.name + ".json", "w") as file:
-			json.dump(my_dict, file)
-			# file.write(str(m))
 		
+	#---Try to open the Lumiere export dictionary
+		try:
+			with open(current_file_dir + "\\" + "lumiere_dictionary.json", 'r', encoding='utf-8') as file:
+				my_dict = json.load(file)
+				file.close()
+		except :
+			print("Warning, dict empty, creating a new one.")	
+			my_dict = {}
+		
+		if self.act_group != "": 
+			if bpy.data.groups[self.act_group]:
+				for ob in bpy.data.objects:
+					for group in ob.users_group:
+						if group.name == self.act_group:
+							lumiere_dict = export_props_light(self, context, ob.Lumiere.lightname, ob.name)
+							my_dict.update(lumiere_dict)
+						
+			with open(current_file_dir + "\\" + "lumiere_dictionary.json", "w", encoding='utf-8') as file:
+				json.dump(my_dict, file, sort_keys=True, indent=4, ensure_ascii=False)
+
+			file.close()
+			message = "Group exported"
+			self.report({'INFO'}, message)
 		return {'FINISHED'}
-				
 #########################################################################################################
 
 #########################################################################################################
-class SCENE_OT_import_light(Operator):
+class GROUP_UL_list(bpy.types.UIList):
+	def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+		group = data
+		if self.layout_type in {'DEFAULT', 'COMPACT'}:
+			layout.prop(item, "name", text="", toggle=False, emboss=False, icon_value=icon)
+			layout.prop(item, "num", text="", toggle=False, emboss=False)
+			layout.context_pointer_set("group", group)
+		elif self.layout_type in {'GRID'}:
+			pass
+	
+#########################################################################################################
+
+#########################################################################################################
+class ALL_LIGHTS_UL_list(bpy.types.UIList):
+	def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+		object = data
+		if self.layout_type in {'DEFAULT', 'COMPACT'}:
+			split = layout.split(0.7)
+			split.prop(item, "name", text="", toggle=False, emboss=False, icon_value=icon, icon="GROUP" if item.all_light_in_group else "BLANK1")
+		elif self.layout_type in {'GRID'}:
+			pass		
+#########################################################################################################
+
+########################################################################################################
+# Create custom property group
+class LightsProp(bpy.types.PropertyGroup):
+	label = bpy.props.StringProperty()
+	all_light_in_group = bpy.props.BoolProperty(default=False)
+#########################################################################################################
+
+########################################################################################################
+# Create custom property group
+class GroupProp(bpy.types.PropertyGroup):
+	num = bpy.props.StringProperty()
+#########################################################################################################
+
+#########################################################################################################
+class RemoveLightItem(bpy.types.Operator):
+	bl_idname = "scene.remove_light_item"
+	bl_label = "Remove Light Entry"
+
+	light = bpy.props.StringProperty()
+	
+	@classmethod
+	def poll(cls, context):
+		return context.scene.Lumiere_all_lights_list_index >= 0
+
+	def execute(self, context):
+		settings = context.scene.Lumiere_all_lights_list	
+		settings.remove(context.scene.Lumiere_all_lights_list_index)
+		context.scene.Lumiere_all_lights_list_index -= 1
+		self.my_dict = get_lumiere_dict(self, context)
+		self.report({'INFO'}, "Light " + self.light + " deleted from the list")
+		self.my_dict.pop(self.light, None)
+		update_lumiere_dict(self, context, self.my_dict)
+	
+		return {'FINISHED'} 
+#########################################################################################################
+
+#########################################################################################################
+class RemoveGroupItem(bpy.types.Operator):
+	bl_idname = "scene.remove_group_item"
+	bl_label = "Remove Group Entry"
+
+	group = bpy.props.StringProperty()
+	
+	@classmethod
+	def poll(cls, context):
+		return context.scene.Lumiere_groups_list_index >= 0
+
+	def execute(self, context):
+		settings = context.scene.Lumiere_groups_list	
+		print("LIST GROUP: ", settings)
+		settings.remove(context.scene.Lumiere_groups_list_index)
+		context.scene.Lumiere_groups_list_index -= 1
+		self.my_dict = get_lumiere_dict(self, context)
+		self.report({'INFO'}, "Group " + self.group + " deleted from the list")
+		for key, value in self.my_dict.items():
+			if self.group in value["group"]:
+				value["group"].pop(self.group, None)
+		update_lumiere_dict(self, context, self.my_dict)
+	
+		return {'FINISHED'} 
+#########################################################################################################
+
+#########################################################################################################
+def get_lumiere_dict(self, context):
+		
+	current_file_dir = os.path.dirname(__file__)
+	
+#---Try to open the Lumiere export dictionary
+	try:
+		with open(current_file_dir + "\\" + "lumiere_dictionary.json", 'r', encoding='utf-8') as file:
+			my_dict = json.loads(file.read())		
+			file.close()
+	except : 
+		my_dict = {}
+
+	return(my_dict)
+#########################################################################################################
+
+#########################################################################################################
+def update_lumiere_dict(self, context, my_dict):
+		
+	current_file_dir = os.path.dirname(__file__)
+		
+	with open(current_file_dir + "\\" + "lumiere_dictionary.json", "w", encoding='utf-8') as file:
+		json.dump(my_dict, file, sort_keys=True, indent=4, ensure_ascii=False)
+	file.close()		
+
+#########################################################################################################
+
+#########################################################################################################
+class SCENE_OT_import_management(bpy.types.Operator):
+	"""Manage the data from JSON file"""
+	
+	bl_idname = "object.manage_light"
+	bl_label = "Manage library"
+	
+#---List of panels options 
+	select_group = EnumProperty(name="", 
+								description="Display by individual light or group.\nSelected",
+								items=(
+								("Light", "Light", "", 0),
+								("Group", "Group", "", 1),
+								), 
+								default="Light")
+								
+	error_message = BoolProperty(default=False)
+	def separator(self):
+		layout = self.layout
+		row = layout.row()
+		row.scale_y = .15
+		row.alert = True
+		row.operator("object.separator", text=" ", icon='BLANK1')
+		row.alert = False
+		
+	
+	def execute(self, context):
+		try:
+		#---Create the list of lights or lights in group 
+			if self.select_group == "Group":
+				light_in_group = [key for key, value in self.my_dict.items() if self.select_item in value["group"]]
+
+				if bpy.data.groups.get(self.select_item) is not None:
+					group_to_link = bpy.data.groups[self.select_item]
+				else:
+					group_to_link = bpy.data.groups.new(self.select_item)
+				
+				for light in light_in_group:
+					self.add_light(context, light)
+					cobj = get_object(context, self.lightname)
+					group_to_link.objects.link(cobj)
+					
+			else:
+				self.add_light(context, self.select_item)
+				
+			return {'FINISHED'}
+		except : 
+			print("Nothing selected.")
+			return {'PASS_THROUGH'}
+			
+	def check(self, context):
+		return True
+		
+	def draw(self, context):
+		scene = context.scene
+		layout = self.layout
+
+		row = layout.row(align=True)
+		box = row.box()
+		col = box.column()
+		row = col.row(align=True)
+		row.prop(self, "select_group", text=" ", expand=True)		
+
+	#---Get a Light or a Group
+		if self.select_group == "Group":
+		#---Expand the groups
+			if len(context.scene.Lumiere_groups_list) > 0:
+				row = col.row(align=True)
+				row.template_list("GROUP_UL_list", "", context.scene, "Lumiere_groups_list", context.scene, "Lumiere_groups_list_index", rows=2)
+				self.select_type = "Group"
+				self.select_item = scene.Lumiere_groups_list[scene.Lumiere_groups_list_index].name
+			#---Remove from list
+				row = col.row(align=True)
+				op = row.operator("scene.remove_group_item")
+				op.group = scene.Lumiere_groups_list[scene.Lumiere_groups_list_index].name
+				for i, v in enumerate(self.group_dict[self.select_item]):
+					row = layout.row(align=True)
+					row.scale_y = 0.5
+					row.label(v)
+
+				group_light = [key for key in self.my_dict.keys() if self.select_item in self.my_dict[key]["group"]]
+				self.separator()
+				for light in group_light:
+					row = layout.row(align=True)
+					row.scale_y = 0.5
+					row.label(light)
+				
+		elif self.select_group == "Light":
+		#---Expand all the lights with or without group
+			if len(context.scene.Lumiere_all_lights_list) > 0:
+				light = scene.Lumiere_all_lights_list[scene.Lumiere_all_lights_list_index].name
+				row = col.row(align=True)
+				row.template_list("ALL_LIGHTS_UL_list", "",context.scene, "Lumiere_all_lights_list", context.scene, "Lumiere_all_lights_list_index", rows=2)
+				self.select_type = "All"
+				self.select_item = scene.Lumiere_all_lights_list[scene.Lumiere_all_lights_list_index].name
+			#---Remove from list
+				row = col.row(align=True)
+				op = row.operator("scene.remove_light_item")
+				op.light = scene.Lumiere_all_lights_list[scene.Lumiere_all_lights_list_index].name
+				for i, v in enumerate(self.my_dict[light]["Lumiere"]["definition"]):
+					row = layout.row(align=True)
+					row.scale_y = 0.5
+					row.label(v)
+				
+	def invoke(self, context, event):
+		context.scene.Lumiere_all_lights_list.clear()
+		context.scene.Lumiere_groups_list.clear()
+		current_file_dir = os.path.dirname(__file__)
+		self.my_dict = get_lumiere_dict(self, context)
+		self.group_dict = defaultdict(list)
+		self.group_light = {}
+		
+		for key, value in self.my_dict.items():
+
+		#---Fill the items for the light with or without group
+			item = context.scene.Lumiere_all_lights_list.add()
+			item.name = key		
+			item.all_light_in_group = True if self.my_dict[key]["group"] else False			
+			
+		#---Fill the items for the light in group
+			if self.my_dict[key]["group"]:
+				self.group_dict.update({i:self.my_dict[key]["group"][i] for i in self.my_dict[key]["group"]})
+
+	#---Create a list with all the groups and count them
+		cnt = Counter([val for value in self.my_dict.values() for val in value["group"]])
+
+	#---Fill the items for the groups
+		for group, nbr in cnt.items():
+			item = context.scene.Lumiere_groups_list.add()
+			item.name = group
+			item.num = str(nbr)
+			
+		return context.window_manager.invoke_popup(self)
+		# return context.window_manager.invoke_props_dialog(self)
+#########################################################################################################
+
+#########################################################################################################
+class SCENE_OT_import_light(bpy.types.Operator):
 	"""Import the data from JSON file"""
 	
 	bl_idname = "object.import_light"
-	bl_label = "Export light"
+	bl_label = "Import list"
 	
-	act_light = bpy.props.StringProperty()
-	
+#---List of panels options 
+	select_group = EnumProperty(name="", 
+								description="List of panels options.\nSelected",
+								items=(
+								("Light", "Light", "", 0),
+								("Group", "Group", "", 1),
+								), 
+								default="Light")
+								
+	error_message = BoolProperty(default=False)
+	def separator(self):
+		layout = self.layout
+		row = layout.row()
+		row.scale_y = .15
+		row.alert = True
+		row.operator("object.separator", text=" ", icon='BLANK1')
+		row.alert = False
+		
+	def add_light(self, context, light):
+
+	#---Check if the light already exist
+		for ob in context.scene.objects:
+			if ob.name == light:
+				error_message = True
+
+		if self.my_dict[light]["Lumiere"]["typlight"] == 0:
+			obj_light = create_softbox(self, context, dupli_name = light)
+		elif self.my_dict[light]["Lumiere"]["typlight"] == 1:
+			obj_light = create_light_point(self, context, dupli_name = light)
+		elif self.my_dict[light]["Lumiere"]["typlight"] == 2:
+			obj_light = create_light_sun(self, context, dupli_name = light)
+		elif self.my_dict[light]["Lumiere"]["typlight"] == 3:
+			obj_light = create_light_spot(self, context, dupli_name = light)
+		elif self.my_dict[light]["Lumiere"]["typlight"] == 4:
+			obj_light = create_light_area(self, context, dupli_name = light)
+		elif self.my_dict[light]["Lumiere"]["typlight"] == 5:
+			obj_light = create_light_sky(self, context, dupli_name = light)
+		elif self.my_dict[light]["Lumiere"]["typlight"] == 6:
+			obj_light = create_light_env(self, context, dupli_name = light)
+
+		obj_light["Lumiere"] = self.my_dict[light]["Lumiere"]
+		obj_light.Lumiere.definition = ' '.join(self.my_dict[light]["Lumiere"]["definition"])
+		obj_light["Lumiere"]["lightname"] = obj_light.data.name
+		obj_light.location = self.my_dict[light]["location"]
+		obj_light.rotation_euler = self.my_dict[light]["rotation"]
+		obj_light.scale = self.my_dict[light]["scale"]
+
+		
+	#--- Environment light
+		if obj_light.Lumiere.typlight == "Env":
+			world = bpy.data.worlds['Lumiere_world'].node_tree.nodes
+			if "hdri_name" in self.my_dict[light]["Lumiere"]:
+				bpy.data.images.load(self.my_dict[light]['hdri_path'], check_existing=True)
+				bpy.data.images[self.my_dict[light]["Lumiere"]["hdri_name"]].filepath = self.my_dict[light]['hdri_path'] 
+			if "img_name" in self.my_dict[light]["Lumiere"]:
+				bpy.data.images.load(self.my_dict[light]['img_path'], check_existing=True)
+				bpy.data.images[self.my_dict[light]["Lumiere"]["img_name"]].filepath = self.my_dict[light]['img_path']
+			world['Background'].inputs[0].default_value = [*self.my_dict[light]['hdri_col']]
+			world['Background.001'].inputs[0].default_value = [*self.my_dict[light]['img_col']]
+		
+		else:
+
+			lamp = get_lamp(context, obj_light.data.name) 
+			mat_name, mat = get_mat_name(lamp.data.name)
+			if lamp.type == "LAMP":
+				lamp.data.node_tree.nodes["Light Falloff"].inputs[1].default_value = self.my_dict[light]['smooth']
+			else:
+				mat.node_tree.nodes['Light Falloff'].inputs[1].default_value = self.my_dict[light]['smooth']	
+			
+
+		#---Gradient
+			if obj_light.Lumiere.texture_type == "Gradient":
+				mat.node_tree.nodes['Math'].inputs[1].default_value = self.my_dict[light]['repeat']
+				colramp = mat.node_tree.nodes['ColorRamp'].color_ramp 
+				colramp.interpolation = self.my_dict[light]['interpolation']
+				i = 0
+				for key, value in sorted(self.my_dict[light]['gradient'].items()) :
+					if i > 1:
+						colramp.elements.new(float(key))
+					colramp.elements[i].position = float(key)
+					colramp.elements[i].color[:] = value
+					i += 1
+		
+		self.lightname = obj_light["Lumiere"]["lightname"]
+		create_lamp_grid(self, context)
+		update_mat(self, context)
+
+		
 	def execute(self, context):
 		
-		if self.act_light != "": 
-			context.scene.objects.active = bpy.data.objects[self.act_light] 
-			obj_light = context.active_object
-			
-			for ob in bpy.context.scene.objects:
-					if ob.name != obj_light.name:
-						ob.select = False
-						ob.Lumiere.select_light = False
-		else:
-			self.act_light = context.active_object.name
-		obj_light = context.active_object
-		obj_light.select = True
-		
-		my_dict = obj_light["Lumiere"].to_dict()	
-		
-	#http://blender.stackexchange.com/questions/16511/how-can-i-store-and-retrieve-a-custom-list-in-a-blend-file/26164#26164
-		m = json.dumps(my_dict, sort_keys=True, indent=2)
-		text_block = bpy.data.texts.new('my_storage.json')
-		text_block.from_string(m)	
+		try:
+		#---Create the list of lights or lights in group 
+			if self.select_group == "Group":
+				light_in_group = [key for key, value in self.my_dict.items() if self.select_item in value["group"]]
 
-	#http://blender.stackexchange.com/questions/31964/problem-with-paths-in-my-script-relative-to-local-python-file
-		current_file_path = __file__
+				if bpy.data.groups.get(self.select_item) is not None:
+					group_to_link = bpy.data.groups[self.select_item]
+				else:
+					group_to_link = bpy.data.groups.new(self.select_item)
+				for light in light_in_group:
+					self.add_light(context, light)
+					cobj = get_object(context, self.lightname)
+					group_to_link.objects.link(cobj)
+			else:
+				self.add_light(context, self.select_item)
+					
+			return {'FINISHED'}
+		except : 
+			print("Nothing selected.")
+			return {'PASS_THROUGH'}
+		
+	def check(self, context):
+		return True
+		
+	def draw(self, context):
+		scene = context.scene
+		layout = self.layout
+
+		row = layout.row(align=True)
+		box = row.box()
+		col = box.column()
+		row = col.row(align=True)
+		row.prop(self, "select_group", text=" ", expand=True)		
+
+	#---Get a Light or a Group
+		if self.select_group == "Group":
+		#---Expand the groups
+			if len(context.scene.Lumiere_groups_list) > 0:
+				row = col.row(align=True)
+				row.template_list("GROUP_UL_list", "", context.scene, "Lumiere_groups_list", context.scene, "Lumiere_groups_list_index", rows=2)
+				self.select_type = "Group"
+				self.select_item = scene.Lumiere_groups_list[scene.Lumiere_groups_list_index].name
+				# for i, v in enumerate(list(textwrap.wrap(bpy.data.groups[self.select_item]["Lumiere"]["definition"], 50))):
+				
+				for i, v in enumerate(self.group_dict[self.select_item]):
+					row = layout.row(align=True)
+					row.scale_y = 0.5
+					row.label(v)
+
+				group_light = [key for key in self.my_dict.keys() if self.select_item in self.my_dict[key]["group"]]
+				self.separator()
+				for light in group_light:
+					row = layout.row(align=True)
+					row.scale_y = 0.5
+					row.label(light)
+
+		elif self.select_group == "Light":
+			if len(context.scene.Lumiere_all_lights_list) > 0:
+		#---Expand all the lights with or without group
+				light = scene.Lumiere_all_lights_list[scene.Lumiere_all_lights_list_index].name
+				row = col.row(align=True)
+				row.template_list("ALL_LIGHTS_UL_list", "",context.scene, "Lumiere_all_lights_list", context.scene, "Lumiere_all_lights_list_index", rows=2)
+				self.select_type = "All"
+				self.select_item = scene.Lumiere_all_lights_list[scene.Lumiere_all_lights_list_index].name
+				for i, v in enumerate(self.my_dict[light]["Lumiere"]["definition"]):
+					row = layout.row(align=True)
+					row.scale_y = 0.5
+					row.label(v)
+				
+	def invoke(self, context, event):
+		context.scene.Lumiere_all_lights_list.clear()
+		context.scene.Lumiere_groups_list.clear()
 		current_file_dir = os.path.dirname(__file__)
-		print("Path: ", current_file_dir)
+		self.my_dict = get_lumiere_dict(self, context)
+		self.group_dict = defaultdict(list)
+		self.group_light = {}
+		
+		for key, value in self.my_dict.items():
 
-	#http://blender.stackexchange.com/questions/22921/how-to-export-list-of-prop-values-as-txt-to-a-certain-folder-and-how-to-import
-		# other_file_path = os.path.join(current_file_dir, "directory", "other_file.ext")
-		with open(current_file_dir + "\\" + obj_light.name + ".json", "r") as file:
-			# text_block = file.read()
-			text_block = json.load(file)
-			file.closed
-		obj_light["Lumiere"] = text_block
-		# bpy.context.scene.update() 
-		# bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-		print("text_block: ", text_block)
-		return {'FINISHED'}
+		#---Fill the items for the light with or without group
+			item = context.scene.Lumiere_all_lights_list.add()
+			item.name = key		
+			item.all_light_in_group = True if self.my_dict[key]["group"] else False			
+			
+		#---Fill the items for the light without group
+			if self.my_dict[key]["group"]:
+				self.group_dict.update({i:self.my_dict[key]["group"][i] for i in self.my_dict[key]["group"]})
 
+	#---Create a list with all the groups and count them
+		cnt = Counter([val for value in self.my_dict.values() for val in value["group"]])
+
+	#---Fill the items for the groups
+		for group, nbr in cnt.items():
+			item = context.scene.Lumiere_groups_list.add()
+			item.name = group
+			item.num = str(nbr)
+			
+		return context.window_manager.invoke_props_dialog(self)
+		
 #########################################################################################################
 
 #########################################################################################################
@@ -4186,19 +4717,18 @@ class SCENE_OT_select_light(Operator):
 						ob.select = False
 		else:
 			self.act_light = context.active_object.name
+			obj_light = context.active_object
 			
-		obj_light = context.active_object
 		obj_light.select = True
 
 		return {'FINISHED'}
-
 
 #########################################################################################################
 
 #########################################################################################################			
 class SCENE_OT_remove_light(bpy.types.Operator):
 	"""Remove the selected light"""
-	bl_idname = "object.remove"
+	bl_idname = "object.remove_light"
 	bl_label = "Remove light"
 	bl_options = {"REGISTER"}
 
@@ -4235,6 +4765,7 @@ class SCENE_OT_remove_light(bpy.types.Operator):
 				context.scene.objects.unlink(base_projector)
 				bpy.data.objects.remove(base_projector, do_unlink=True)
 				obj_light.Lumiere.projector_close = False
+				
 	#---Remove the light
 		if obj_light.Lumiere.typlight != "Env":
 		#---Get the lamp or the softbox link to the duplivert
@@ -4347,54 +4878,38 @@ def new_items_type_light(self, context):
 #########################################################################################################
 
 #########################################################################################################	
-class DialogOperator(bpy.types.Operator):
-	bl_idname = "object.dialog_operator"
-	bl_label = "Simple Dialog Operator"
+class ERROR_OT_Message(bpy.types.Operator):
 
-	my_float = bpy.props.FloatProperty(name="Some Floating Point")
-	my_bool = bpy.props.BoolProperty(name="Toggle Option")
-	my_string = bpy.props.StringProperty(name="String Value")
-	# From ImportHelper. Filter filenames.
-	filename_ext = ".json"
-	filter_glob = bpy.props.StringProperty(default="*.json", options={'HIDDEN'})
-	filepath = bpy.props.StringProperty(name="File Path", maxlen=1024, default="")
+	bl_idname = "error.message"
+	bl_label = "Message"
+
+	options_dialog = EnumProperty(name="Select an option", 
+								description="List of options.\nSelected",
+								items=(
+								("Cancel", "Cancel", "", 0),
+								("Replace", "Replace", "", 1),
+								("Rename", "Rename", "", 2),
+								), 
+								default="Cancel")	
+	
+	my_dict = {}
 	
 	def execute(self, context):
-		message = "Popup Values: %f, %d, '%s'" % \
-			(self.my_float, self.my_bool, self.my_string)
+		message = "This light already exist !"
 		self.report({'INFO'}, message)
 		return {'FINISHED'}
-
+		
 	def check(self, context):
 		return True
-
-	def draw(self, context):
-		cobj = context.active_object
-		layout = self.layout
-		layout.prop(self, "my_bool")
-		op = layout.operator("object.add_light", text="Range", icon='NONE')
-		op.act_light = cobj.name 
-		op.from_panel = True
-		op.dist_light = True		
-		if self.my_bool:
-			layout.label("It's TRUE")
-			layout.prop(self, "my_string")
-
+		
 	def invoke(self, context, event):
-		wm = context.window_manager
-		return wm.invoke_props_dialog(self)
-
-#########################################################################################################
-
-#########################################################################################################
-def update_group_mat(self, context):
-	group = self
-	print("Group: ", group)
-
-	for light in bpy.data.groups[group].objects :
-		mat_name, mat = get_mat_name(light.data.name)
-		mat.node_tree.nodes["Math"].inputs[1].default_value = group.group_energy
-
+		return context.window_manager.invoke_props_dialog(self, width=400, height=200)
+		
+	def draw(self, context):
+		layout = self.layout
+		layout.label("This light already exist. What do you want to do ?") 
+		layout.prop(self, "options_dialog", expand=True)
+		
 #########################################################################################################
 
 #########################################################################################################
@@ -4422,26 +4937,28 @@ class GROUP_OT_light_group_remove(Operator):
 	"""Remove light from group"""
 	bl_idname = "group.light_group_remove"
 	bl_label = "Remove light from group"
+	type = bpy.props.StringProperty()
 	light = bpy.props.StringProperty()
 	group = bpy.props.StringProperty()
 	
 	def execute(self, context):
-		act_light = context.active_object
-		context.scene.objects.active = bpy.data.objects[self.light] 
-		obj_light = context.active_object
-		obj_light.select = True
 		link_group = bpy.data.groups[self.group]
-		link_group.objects.unlink(obj_light)
-		
-		# if not obj_light.users_group:
-			# mat_name, mat = get_mat_name(obj_light.data.name)
-			# mat.node_tree.nodes["Math"].inputs[1].default_value = 1
-			
-		obj_light.select = False
-		context.scene.objects.active = bpy.data.objects[act_light.name] 
-		act_light.select = True
-
-			
+		if self.type == "light":
+			context.scene.objects.active = bpy.data.objects[self.light] 
+			obj_light = context.active_object
+			obj_light.select = True
+			link_group.objects.unlink(obj_light)
+				
+			obj_light.select = False
+			context.scene.objects.active = bpy.data.objects[self.light] 
+			obj_light.select = True
+		else:
+			if bpy.data.groups[self.group]:
+				for ob in bpy.data.objects:
+					for group in ob.users_group:
+						if group.name == self.group:
+							link_group.objects.unlink(ob)
+	
 		return {'FINISHED'}
 
 #########################################################################################################
@@ -4454,46 +4971,148 @@ class OBJECT_OT_light_group_link(Operator):
 	Link light to existing group
 	"""
 	light = bpy.props.StringProperty()
+	group = bpy.props.StringProperty()
 	
 	def execute(self, context):
-		act_light = context.active_object
 		context.scene.objects.active = bpy.data.objects[self.light] 
-		obj_light = context.active_object
+		obj_light = bpy.data.objects[self.light]
 		obj_light.select = True
-		bpy.ops.object.group_link()
+		bpy.ops.object.group_link(group=self.group)
 		obj_light.select = False
-		context.scene.objects.active = bpy.data.objects[act_light.name] 
-		act_light.select = True
+		context.scene.objects.active = bpy.data.objects[self.light] 
+		obj_light.select = True
 		return {'FINISHED'}
+#########################################################################################################
+
+#########################################################################################################
+class OBJECT_OT_separator(Operator):
+	bl_idname = "object.separator"
+	bl_label = "Separator"
+	"""
+	Separator
+	"""
+	
+	def execute(self, context):
+		return {'FINISHED'}		
+#########################################################################################################
+
+#########################################################################################################
+def items_list_group_add(self, context):
+	"""Select the group you want to add the light to."""
+	items = {(group.name, group.name, "", i) for i, group in enumerate(bpy.data.groups)}
+
+	return items		
+
+#########################################################################################################
+
+#########################################################################################################	
+class SCENE_OT_export_popup(Operator):
+	""" Export the light """
+	
+	bl_idname = "object.export_popup"
+	bl_label = "Export"	 
+	
+	act_name = bpy.props.StringProperty()
+	grp_name = bpy.props.StringProperty()
+	act_type = bpy.props.StringProperty()
+	
+	#source ZEFFII : https://blender.stackexchange.com/questions/44356/fighting-split-col-and-aligning-row-content/44357#44357
+	def draw_props(self, labelname):
+		layout = self.layout
+		c = layout.column()
+		row = c.row()
+		split = row.split(percentage=0.25)
+		c = split.column()
+		c.label(labelname)
+		split = split.split()
+		self.column = split.column()
+		
+	def separator(self):
+		layout = self.layout
+		row = layout.row()
+		row.scale_y = .15
+		row.alert = True
+		row.operator("object.separator", text=" ", icon='BLANK1')
+		row.alert = False
+		
+	def execute(self, context):
+		return {"FINISHED"} 
+		
+	def check(self, context):
+		return True 
+		
+	def draw(self, context):
+		scene = context.scene
+		
+		if self.act_type == "Light":
+			cobj = bpy.data.objects[self.act_name]
+		#---Export individual light
+			self.separator()
+			self.draw_props("Export")
+			op = self.column.operator("object.export_light", text ="Export Light")
+			op.act_light = cobj.name 
+			self.light_on_group = cobj.users_group
+			self.draw_props("Description")
+			row = self.column.row(align=True)
+			row.prop(cobj.Lumiere, "definition", text="", expand=False)
+
+			self.separator()
+			
+			#---Groups
+			if bpy.data.groups:
+				self.draw_props("Add:")
+				row = self.column.row(align=True)
+				op = row.operator("object.light_group_link", text="Add to:") 
+				op.light = cobj.name
+				op.group = scene.Lumiere.list_group_add
+				row.prop(scene.Lumiere, "list_group_add", text="", expand=False)
+				for group in bpy.data.groups:
+					if group in cobj.users_group:
+						self.draw_props("Remove:")
+						row = self.column.row(align=True)
+						op = row.operator("group.light_group_remove", text="Remove from: " + group.name )
+						op.type = "light"
+						op.light = cobj.name
+						op.group = group.name
+				self.draw_props("Create:")
+				self.column.operator("object.group_add", text="Add to new group")		
+			else:
+				self.draw_props("Create:")
+				self.column.operator("object.group_add", text="Add to new group")	
+				
+		else:
+		#---Export all lights in this group
+			group = bpy.data.groups[self.act_name]
+			self.separator()
+			self.draw_props("Export")
+			op = self.column.operator("object.export_group", text ="Export Group")
+			op.act_group = self.act_name
+			self.draw_props("Description")
+			row = self.column.row(align=True)
+			row.prop(group.Lumiere, "definition", text="", expand=False)
+			self.separator()
+			row = self.column.row(align=True)
+			op = row.operator("group.light_group_remove", text="Remove all from: " + group.name )
+			op.type = "group"
+			op.light = ""
+			op.group = group.name
+			
+	def invoke(self, context, event):
+		return context.window_manager.invoke_popup(self)
 		
 #########################################################################################################
 
 #########################################################################################################	
 
 class LumiereGrp(bpy.types.PropertyGroup):
-	# Color of the group
-	group_color = FloatVectorProperty(	
-				  name = "",
-				  subtype = "COLOR",
-				  size = 4,
-				  min = 0.0,
-				  max = 1.0,
-				  default = (0.8,0.8,0.8,1.0),
-				  update=update_group_mat)	
-
-	# Strength of the group
-	group_energy = FloatProperty(
-			  name="Strength",
-			  description="Strength of the group",
-			  min=0, max=10000, soft_min=0.0, soft_max=10,
-			  default=1,
-			  precision=2,
-			  subtype='NONE',
-			  unit='NONE',
-			  update=update_group_mat)	
-
 	expanded_group = BoolProperty(default=False)
 	show_group = BoolProperty(default=True)	 
+							   
+#---A short description of the group for import / export
+	definition = StringProperty(
+							   name="Description",
+							   description="Description.",) 
+								
 #-------------------------------------------------------------------------#
 #-------------------------------------------------------------------------#
 #-------------------------------------------------------------------------#
@@ -4502,13 +5121,14 @@ class LumiereScn(bpy.types.PropertyGroup):
 #---List of lights sources
 	typlight = EnumProperty(name="Light sources",
 							description="List of lights sources:\n"+
-							"- Panel : Panel object with an emission shader\n"+
-							"- Point : Emit light equally in all directions\n"+
-							"- Sun   : Emit light in a given direction\n"+
-							"- Spot  : Emit light in a cone direction\n"+
-							"- Area  : Emit light from a square or rectangular area\n"+
-							"- Sky   : Emit light from background and a sun light\n"+
-							"- Env   : Emit light from an environment image map\n"+
+							"- Panel  : Panel object with an emission shader\n"+
+							"- Point  : Emit light equally in all directions\n"+
+							"- Sun	  : Emit light in a given direction\n"+
+							"- Spot	  : Emit light in a cone direction\n"+
+							"- Area	  : Emit light from a square or rectangular area\n"+
+							"- Sky	  : Emit light from background and a sun light\n"+
+							"- Env	  : Emit light from an environment image map\n"+
+							"- Import : Import your previous saved Light / Group lights\n"+
 							"Selected",
 							items=(
 							("Panel", "Panel light", "", 0),
@@ -4518,9 +5138,15 @@ class LumiereScn(bpy.types.PropertyGroup):
 							("Area", "Area light", "", 4),
 							("Sky", "Sky Background", "", 5),
 							("Env", "Environment Background", "", 6),
-							# ("Import", "Import Light", "", 7),
+							("Import", "Import Light", "", 7),
 							), 
 							default='Panel')						   
+
+#---Available groups in the scene
+	list_group_add = EnumProperty(name="Groups", 
+									description="Select the group you want to add the light to.\nSelected",
+									items = items_list_group_add
+									)
 
 #-------------------------------------------------------------------------#
 #-------------------------------------------------------------------------#
@@ -4532,17 +5158,22 @@ class LumiereObj(bpy.types.PropertyGroup):
 							   name="LightName",
 							   description="Light name.",)	
 							   
+#---A short description of the light for import / export
+	definition = StringProperty(
+							   name="Description",
+							   description="Description.",) 
+							   
 #---Range of the light from the targeted object
 	range = FloatProperty(
 						  name="Range ",
 						  description="Range from the object.",
-						  min=0.001, max=900.0,
+						  min=0.001, max=100000,
 						  soft_min=0.001, soft_max=100.0,
 						  default=0.5,
 						  precision=2,
 						  subtype='DISTANCE',
 						  unit='LENGTH')
-
+						  
 #---Strength of the light
 	energy = FloatProperty(
 						   name="Strength",
@@ -4582,13 +5213,14 @@ class LumiereObj(bpy.types.PropertyGroup):
 							("Area", "Area light", "", 4),
 							("Sky", "Sky Background", "", 5),
 							("Env", "Environment Background", "", 6),
+							("Import", "Import Light", "", 7),
 							), 
 							default='Panel')
 
 #---Compute the reflection angle from the normal of the target or from the view of the screen.
 	reflect_angle = EnumProperty(name="Reflection",
 						  description="Compute the light position from the angle view or the normal of the object.\n"+\
-						  "- View   : The light will be positioned from the angle of the screen 3dView and the target face of the object.\n"+\
+						  "- View	: The light will be positioned from the angle of the screen 3dView and the target face of the object.\n"+\
 						  "- Normal : The light will be positioned in parralel to the normal of the face of the targeted object.\n"+\
 						  "Selected",
 						  items=(
@@ -4615,7 +5247,7 @@ class LumiereObj(bpy.types.PropertyGroup):
 	typfalloff = EnumProperty(name="", 
 							  description="Define how light intensity decreases over distance\n"+
 							  "Quadratic: leave strength unmodified if smooth is 0.0 and corresponds to reality.\n"+
-							  "Linear   : distance to the light have a slower decrease in intensity.\n"+
+							  "Linear	: distance to the light have a slower decrease in intensity.\n"+
 							  "Constant : distance to the light have no influence on its intensity.\n"+
 							  "Selected",
 							  items=(
@@ -4636,6 +5268,11 @@ class LumiereObj(bpy.types.PropertyGroup):
 						   subtype='NONE',
 						   unit='NONE',
 						   update=update_mat)
+
+#---Invert the direction of raycast 
+	invert_ray = BoolProperty(name="Invert Direction",
+							description="Invert the direction.",
+							default=False)
 
 #---Use random for strength on duplicate lights
 	random_energy = BoolProperty(name="Use random",
@@ -4709,7 +5346,8 @@ class LumiereObj(bpy.types.PropertyGroup):
 								default=0.25,
 								precision=2,
 								subtype='NONE',
-								unit='NONE')
+								unit='NONE',
+								update=update_softbox_smooth) 
 
 #---Number of row for the grid
 	nbrow = IntProperty(name="Nbr Row",
@@ -4931,7 +5569,7 @@ class LumiereObj(bpy.types.PropertyGroup):
 							 default=False,
 							 update=reset_options)
 
-#---Brightness of the background image.	
+#---Brightness of the background image. 
 	img_bright = FloatProperty(
 							   name="Bright",
 							   description="Increase the overall brightness of the image.",
@@ -5008,10 +5646,9 @@ class LumiereObj(bpy.types.PropertyGroup):
 							  default="None") 
 
 #---Rotate the texture on 90°
-	# rotate_ninety = BoolProperty(default=False, update=rotate_ninety) 
-
-#---Lock the light on the floor so it can't go under / through
-	# translate_bottom = BoolProperty(default=False, update=translate_bottom) 
+	rotate_ninety = BoolProperty(default=False, 
+								description="Rotate the texture on 90°.",
+								update=update_mat) 
 
 #---Change the light to a reflector (no emission)
 	reflector = BoolProperty(name = "Reflector",
@@ -5029,7 +5666,7 @@ class LumiereObj(bpy.types.PropertyGroup):
 	show = BoolProperty(name="",
 						description="Show / Hide this light.",
 						default=True, 
-						update=show_hide_light)	
+						update=show_hide_light) 
 
 #---Show only this light and hide all the others.			
 	select_only = BoolProperty(name="",
@@ -5107,14 +5744,6 @@ class LumiereObj(bpy.types.PropertyGroup):
 										description="Name of the texture image to project.",
 										update=update_projector_mat)
 	
-
-#---Rotation of the texture image.
-	# projector_img_rotation = FloatProperty(
-										# name="projector Rotation",
-										# description="Rotation of the texture image.",
-										# min= -360, max= 360,
-										# default=0,
-										# update=update_rotation_img)
 
 #---Expand all the options for the image texture.
 	projector_img_expand = BoolProperty(
@@ -5280,7 +5909,12 @@ class LumiereEnvPreferences(bpy.types.Panel):
 				row.prop(context.space_data, "show_world", text="Show world", toggle=True)
 				col = box.column(align=True)
 				row = col.row(align=True)
-
+		
+			#---Export
+				row = col.row(align=True)
+				op = row.operator("object.export_light", text ='Export', icon='BLANK1')
+				op.act_light = cobj.name 
+				
 		#---Material
 			elif cobj.Lumiere.options_type == "Material":
 				box = self.col.box()
@@ -5301,11 +5935,10 @@ class LumiereEnvPreferences(bpy.types.Panel):
 					col = box.column(align=True)
 					
 				row = col.row(align=True)
-
 				row.prop_search(cobj.Lumiere, "hdri_name", bpy.data, "images", text='', icon='NONE')
 				row.operator("image.open",text='', icon='IMASEL')
-				# col = box.column()
 				row = col.row(align=True)
+				
 			#---HDRI color
 				if cobj.Lumiere.hdri_name == "":
 					hdri_col = bpy.data.worlds['Lumiere_world'].node_tree.nodes['Background'].inputs[0] 
@@ -5468,7 +6101,6 @@ class LumiereLampForEnvPreferences(bpy.types.Panel):
 		cobj = self.cobj
 		lamp = self.lamp
 
-
 		if cobj.Lumiere.options_type == "Options":
 			box = self.col.box()
 			col = box.column(align=True)				
@@ -5505,7 +6137,7 @@ class LumiereLampForEnvPreferences(bpy.types.Panel):
 		#---Range
 			col = box.column(align=True)				
 			row = col.row(align=True)
-			op = row.operator("object.add_light", text="Range", icon='NONE')
+			op = row.operator("object.edit_light", text="Range", icon='NONE')
 			op.act_light = cobj.name 
 			op.from_panel = True
 			op.dist_light = True
@@ -5582,7 +6214,6 @@ class LumiereProjectorPreferences(bpy.types.Panel):
 				row.prop(cobj.Lumiere, "projector_options", text=" ", expand=True)
 				col = box.column()
 				row = col.row(align=True)
-
 				
 			#---Color material
 				if cobj.Lumiere.projector_options == "Color":
@@ -5675,6 +6306,14 @@ class LumiereLampPreferences(bpy.types.Panel):
 			
 			col = box.column(align=True)
 			row = col.row(align=True)
+			
+			#---Invert the ray 
+			row.label(text="Invert: ")
+			row.prop(cobj.Lumiere, "invert_ray", text="")											
+			row = col.row(align=True)			
+			
+			col = box.column(align=True)
+			row = col.row(align=True)
 
 			#---Falloff
 			split = row.split(0.6, align=True)
@@ -5682,14 +6321,15 @@ class LumiereLampPreferences(bpy.types.Panel):
 				
 			#---Smooth
 			smooth = lamp.data.node_tree.nodes["Light Falloff"].inputs[1]
-			split.prop(smooth, "default_value")
+			split.prop(smooth, "default_value", text="Smooth")
 			col = box.column(align=True)
 			row = col.row(align=True)
 			row.prop(lamp.data.cycles, "use_multiple_importance_sampling", text='MIS', toggle=True)
 			row.prop(lamp.data.cycles, "cast_shadow", text='Shadow', toggle=True)
 			row.prop(lamp.cycles_visibility, "diffuse", text='Diff', toggle=True)
 			row.prop(lamp.cycles_visibility, "glossy", text='Spec', toggle=True)
-		
+			row = col.row(align=True)
+					
 	#---Material
 		elif cobj.Lumiere.options_type == "Material":
 		#---New box
@@ -5729,7 +6369,6 @@ class LumiereLampPreferences(bpy.types.Panel):
 			else:
 				row.prop(cobj.Lumiere, "lightcolor")
 
-
 		elif cobj.Lumiere.options_type == "Transform":
 			box = self.col.box()
 			
@@ -5742,7 +6381,7 @@ class LumiereLampPreferences(bpy.types.Panel):
 		#---Range
 			col = box.column(align=True)				
 			row = col.row(align=True)
-			op = row.operator("object.add_light", text="Range", icon='NONE')
+			op = row.operator("object.edit_light", text="Range", icon='NONE')
 			op.act_light = cobj.name 
 			op.from_panel = True
 			op.dist_light = True
@@ -5758,7 +6397,7 @@ class LumiereLampPreferences(bpy.types.Panel):
 				row.prop(cobj.Lumiere, "nbrow", text='Row')
 
 			#---Gap Y
-				op = row.operator("object.add_light", text="Gap", icon='NONE')
+				op = row.operator("object.edit_light", text="Gap", icon='NONE')
 				op.act_light = cobj.name 
 				op.from_panel = True
 				op.scale_gapy = True
@@ -5768,7 +6407,7 @@ class LumiereLampPreferences(bpy.types.Panel):
 				row.prop(cobj.Lumiere, "nbcol", text='Col')
 				
 			#---Gap X
-				op = row.operator("object.add_light", text="Gap", icon='NONE')
+				op = row.operator("object.edit_light", text="Gap", icon='NONE')
 				op.act_light = cobj.name 
 				op.from_panel = True
 				op.scale_gapx = True
@@ -5786,19 +6425,19 @@ class LumiereLampPreferences(bpy.types.Panel):
 				row = col1.row(align=True)	
 				
 			#---Scale
-				op = col1.operator("object.add_light", text="Scale X/Y", icon='NONE')
+				op = col1.operator("object.edit_light", text="Scale X/Y", icon='NONE')
 				op.act_light = cobj.name 
 				op.from_panel = True
 				op.scale_light = True
 			
 			#---Scale X
-				op = col1.operator("object.add_light", text="Shadow size" if cobj.Lumiere.typlight == "Spot" else "Scale X", icon='NONE')
+				op = col1.operator("object.edit_light", text="Shadow size" if cobj.Lumiere.typlight == "Spot" else "Scale X", icon='NONE')
 				op.act_light = cobj.name 
 				op.from_panel = True
 				op.scale_light_x = True
 
 			#---Scale Y
-				op = col1.operator("object.add_light", text="Blend" if cobj.Lumiere.typlight == "Spot" else "Scale Y", icon='NONE')
+				op = col1.operator("object.edit_light", text="Blend" if cobj.Lumiere.typlight == "Spot" else "Scale Y", icon='NONE')
 				op.act_light = cobj.name 
 				op.from_panel = True
 				op.scale_light_y = True
@@ -5813,19 +6452,19 @@ class LumiereLampPreferences(bpy.types.Panel):
 				row = col2.row(align=True)
 				
 			#---Rotate X
-				op = col2.operator("object.add_light", text="Rotate X", icon='NONE')
+				op = col2.operator("object.edit_light", text="Rotate X", icon='NONE')
 				op.act_light = cobj.name 
 				op.from_panel = True
 				op.rotate_light_x = True
 				
 			#---Rotate Y
-				op = col2.operator("object.add_light", text="Rotate Y", icon='NONE')
+				op = col2.operator("object.edit_light", text="Rotate Y", icon='NONE')
 				op.act_light = cobj.name 
 				op.from_panel = True
 				op.rotate_light_y = True
 
 			#---Rotate Z
-				op = col2.operator("object.add_light", text="Rotate Z", icon='NONE')
+				op = col2.operator("object.edit_light", text="Rotate Z", icon='NONE')
 				op.act_light = cobj.name 
 				op.from_panel = True
 				op.rotate_light_z = True
@@ -5842,7 +6481,7 @@ class LumiereLampPreferences(bpy.types.Panel):
 			#---Scale
 				col = box.column(align=True)				
 				row = col.row(align=True)
-				op = col.operator("object.add_light", text="Scale", icon='NONE')
+				op = col.operator("object.edit_light", text="Scale", icon='NONE')
 				op.act_light = cobj.name 
 				op.from_panel = True
 				op.scale_light = True
@@ -5886,6 +6525,14 @@ class LumiereSoftboxPreferences(bpy.types.Panel):
 			row.label(text="Reflection: ")
 			row.prop(cobj.Lumiere, "reflect_angle", text="") 
 			
+			col = box.column(align=True)
+			row = col.row(align=True)
+			
+			#---Invert the ray
+			row.label(text="Invert: ")
+			row.prop(cobj.Lumiere, "invert_ray", text="")											
+			row = col.row(align=True)	
+			
 		#---Smooth softbox	
 			col = box.column(align=True)									
 			row = col.row(align=True)									
@@ -5924,20 +6571,7 @@ class LumiereSoftboxPreferences(bpy.types.Panel):
 			row.prop(softbox.cycles_visibility, "diffuse", text='Diff', toggle=True)
 			row.prop(softbox.cycles_visibility, "glossy", text='Spec', toggle=True)
 			row = col.row(align=True)
-
-		#---Groups
-			# if bpy.data.groups:
-				# row.operator("object.group_link", text="Add to group", icon='ZOOMIN') 
-				# for light_group in cobj.users_group:
-					# if light_group == self.group:
-						# row = col.row(align=True)
-						# op = row.operator("group.light_group_remove", text="Remove from group", icon='ZOOMOUT')
-						# op.light = cobj.name
-						# op.group = self.group.name
-						
-			# row = col.row(align=True)
-			# row.operator("object.group_add", text="New group", icon='ZOOMIN')		
-				
+			
 		elif cobj.Lumiere.options_type == "Transform":
 			box = self.col.box()
 			
@@ -5957,7 +6591,7 @@ class LumiereSoftboxPreferences(bpy.types.Panel):
 		#---Range
 			col = box.column(align=True)				
 			row = col.row(align=True)
-			op = row.operator("object.add_light", text="Range", icon='NONE')
+			op = row.operator("object.edit_light", text="Range", icon='NONE')
 			op.act_light = cobj.name 
 			op.from_panel = True
 			op.dist_light = True
@@ -5972,7 +6606,7 @@ class LumiereSoftboxPreferences(bpy.types.Panel):
 			row.prop(cobj.Lumiere, "nbrow", text='Row')
 
 		#---Gap Y
-			op = row.operator("object.add_light", text="Gap", icon='NONE')
+			op = row.operator("object.edit_light", text="Gap", icon='NONE')
 			op.act_light = cobj.name 
 			op.from_panel = True
 			op.scale_gapy = True
@@ -5982,7 +6616,7 @@ class LumiereSoftboxPreferences(bpy.types.Panel):
 			row.prop(cobj.Lumiere, "nbcol", text='Col')
 			
 		#---Gap X
-			op = row.operator("object.add_light", text="Gap", icon='NONE')
+			op = row.operator("object.edit_light", text="Gap", icon='NONE')
 			op.act_light = cobj.name 
 			op.from_panel = True
 			op.scale_gapx = True
@@ -5999,20 +6633,20 @@ class LumiereSoftboxPreferences(bpy.types.Panel):
 			row = col1.row(align=True)	
 			
 		#---Scale
-			op = row.operator("object.add_light", text="X/Y", icon='NONE')
+			op = row.operator("object.edit_light", text="X/Y", icon='NONE')
 			op.act_light = cobj.name 
 			op.from_panel = True
 			op.scale_light = True
 
 		#---Scale X
 			row = row.row(align=True)
-			op = row.operator("object.add_light", text="X", icon='NONE')
+			op = row.operator("object.edit_light", text="X", icon='NONE')
 			op.act_light = cobj.name 
 			op.from_panel = True
 			op.scale_light_x = True
 
 		#---Scale Y
-			op = row.operator("object.add_light", text="Y", icon='NONE')
+			op = row.operator("object.edit_light", text="Y", icon='NONE')
 			op.act_light = cobj.name 
 			op.from_panel = True
 			op.scale_light_y = True
@@ -6027,19 +6661,19 @@ class LumiereSoftboxPreferences(bpy.types.Panel):
 			row = col2.row(align=True)
 		
 		#---Rotate X
-			op = row.operator("object.add_light", text="X", icon='NONE')
+			op = row.operator("object.edit_light", text="X", icon='NONE')
 			op.act_light = cobj.name 
 			op.from_panel = True
 			op.rotate_light_x = True
 			
 		#---Rotate Y
-			op = row.operator("object.add_light", text="Y", icon='NONE')
+			op = row.operator("object.edit_light", text="Y", icon='NONE')
 			op.act_light = cobj.name 
 			op.from_panel = True
 			op.rotate_light_y = True
 
 		#---Rotate Z
-			op = row.operator("object.add_light", text="Z", icon='NONE')
+			op = row.operator("object.edit_light", text="Z", icon='NONE')
 			op.act_light = cobj.name 
 			op.from_panel = True
 			op.rotate_light_z = True
@@ -6049,14 +6683,7 @@ class LumiereSoftboxPreferences(bpy.types.Panel):
 			row = col1.row(align=True)
 			row.label(text="Lock light:")
 			row = col2.row(align=True)
-			row.prop(cobj.Lumiere, "lock_light", text="")		
-			
-		#---Lock Light
-			# col = box.column(align=True)				
-			# row = col1.row(align=True)
-			# row.label(text="Lock bottom:")
-			# row = col2.row(align=True)
-			# row.prop(cobj.Lumiere, "translate_bottom", text="")		
+			row.prop(cobj.Lumiere, "lock_light", text="")
 			
 		elif cobj.Lumiere.options_type == "Material":
 			box = self.col.box()
@@ -6076,6 +6703,9 @@ class LumiereSoftboxPreferences(bpy.types.Panel):
 
 			#---Repeat gradient
 				row.prop(repeat_u, "default_value", text="Repeat")
+				
+			#---Rotate 90°
+				row.prop(cobj.Lumiere, "rotate_ninety", text="", icon="FILE_REFRESH")
 				col = box.column()
 				row = col.row(align=True)
 					
@@ -6103,6 +6733,9 @@ class LumiereSoftboxPreferences(bpy.types.Panel):
 			#---Image texture name
 				row.prop_search(cobj.Lumiere, "img_name", bpy.data, "images", text="")
 				row.operator("image.open",text='', icon='IMASEL')
+				
+			#---Rotate 90°
+				row.prop(cobj.Lumiere, "rotate_ninety", text="", icon="FILE_REFRESH")				
 				row = col.row(align=True)
 			
 			#---Select image texture options
@@ -6205,7 +6838,6 @@ class LumiereLightParameterPreferences(bpy.types.Panel):
 		
 		if object.Lumiere.typlight == "Panel":
 			self.softbox_mat = bpy.data.materials["Mat_SOFTBOX_" + object.data.name]
-			softbox_mat = bpy.data.materials["Mat_SOFTBOX_" + object.data.name]
 			for ob in context.scene.objects:
 				if ob.type != 'EMPTY' and ob.data.name == "SOFTBOX_" + object.data.name:
 					softbox_obj = ob 
@@ -6224,7 +6856,7 @@ class LumiereLightParameterPreferences(bpy.types.Panel):
 			bsplit.scale_y = .8
 			
 		#---Tweak the light (edit mode)
-			op = bsplit.operator("object.add_light", icon='ACTION_TWEAK', text='', emboss=False)
+			op = bsplit.operator("object.edit_light", icon='ACTION_TWEAK', text='', emboss=False)
 			op.editmode = True
 			op.act_light = cobj.name   
 			
@@ -6233,19 +6865,19 @@ class LumiereLightParameterPreferences(bpy.types.Panel):
 
 		#---Expand the light options
 			bsplit = col.row()
-			bsplit.prop(cobj.Lumiere, "expanded",icon="TRIA_UP" if cobj.Lumiere.expanded else "TRIA_DOWN",icon_only=True, emboss=False)
+			bsplit.prop(cobj.Lumiere, "expanded",icon="TRIA_DOWN" if cobj.Lumiere.expanded else "TRIA_RIGHT",icon_only=True, emboss=False)
 		
 		#---If the light is not hide
 			if cobj.Lumiere.show :
+				
+			#--Hide the light
+				bsplit.prop(cobj.Lumiere, "show", text='', icon='OUTLINER_OB_LAMP', icon_only=True, emboss=False)
 
 			#---Scale the selection button by half
 				split = split.split(.05, align=True)
 				col = split.column(align=True)
 				bsplit2 = col.row(align=True)
 				bsplit2.scale_y = 1.7
-				
-			#--Hide the light
-				bsplit.prop(cobj.Lumiere, "show", text='', icon='OUTLINER_OB_LAMP', icon_only=True, emboss=False)
 
 			#---Alert if the light is selected	
 				if (context.scene.objects.active == cobj) :
@@ -6258,7 +6890,7 @@ class LumiereLightParameterPreferences(bpy.types.Panel):
 			#---End of the alert 
 				bsplit2.alert = False
 				
-		#---If the light is hide : Show the light
+		#---If the light is hide : hide the selector widget
 			else:
 				bsplit.prop(cobj.Lumiere, "show", icon='%s' % 'OUTLINER_OB_LAMP' if cobj.Lumiere.show else 'LAMP', text='', emboss=False, translate=False)
 			
@@ -6297,21 +6929,22 @@ class LumiereLightParameterPreferences(bpy.types.Panel):
 					bsplit3.prop(hdri_col, "default_value", text="")
 				else:
 					bsplit3.label(text="",icon='FILE_IMAGE')
-					
+
+			row = col.row(align=True)
+			if (context.scene.objects.active == cobj) :
+				row = row.split(0.9, align=True)
+				
 		#---Light strength
+			row.scale_y = .7
 			if cobj.Lumiere.typlight != "Env":
-				row = col.row(align=True)
-				row.scale_y = .7
 				row.prop(cobj.Lumiere, "energy", text='', slider = True)
 			else:
-				row = col.row(align=True)
-				row.scale_y = .7
 				hdr_back = bpy.data.worlds['Lumiere_world'].node_tree.nodes['Background'].inputs['Strength']	
 				row.prop(hdr_back, "default_value", text="Strength", slider = False)
 				
 		#---Remove the selected light
 			if (context.scene.objects.active == cobj) :
-				row.operator("object.remove", text="", icon='ZOOMOUT').act_light = cobj.name
+				row.operator("object.remove_light", text="", icon='PANEL_CLOSE').act_light = cobj.name
 
 						
 		#---Menu items
@@ -6319,27 +6952,30 @@ class LumiereLightParameterPreferences(bpy.types.Panel):
 				col = box.column(align=True)				
 				row = col.row(align=True)
 				row.prop(cobj.Lumiere, "items_light_type", text="")
-				row.prop(cobj.Lumiere, "options_expand", icon="TRIA_UP" if cobj.Lumiere.options_expand else "TRIA_DOWN", icon_only=True)
-				if cobj.Lumiere.options_expand:
-					row = col.row(align=True)
-					row.prop(cobj.Lumiere, "options_type", text=" ", expand=True)
-					row = col.row(align=True)
-					self.row = row
-					self.col = box.column()
-					if cobj.Lumiere.items_light_type != "Projector":
-						#---Type light
-						if cobj.Lumiere.typlight == "Panel":
-							LumiereSoftboxPreferences.draw(self, context)
-							
-						elif cobj.Lumiere.typlight == "Env":
-							LumiereEnvPreferences.draw(self, context)
-							
-						else:							
-							LumiereLampPreferences.draw(self, context)
-				
-				#---projector 
-					elif cobj.Lumiere.items_light_type == "Projector":
-						LumiereProjectorPreferences.draw(self, context)
+			#---Export light 
+				op = row.operator("object.export_popup", text="", icon="EXPORT")
+				op.act_type = "Light"
+				op.act_name = cobj.name
+
+				row = col.row(align=True)
+				row.prop(cobj.Lumiere, "options_type", text=" ", expand=True)
+				row = col.row(align=True)
+				self.row = row
+				self.col = box.column()
+				if cobj.Lumiere.items_light_type != "Projector":
+					#---Type light
+					if cobj.Lumiere.typlight == "Panel":
+						LumiereSoftboxPreferences.draw(self, context)
+						
+					elif cobj.Lumiere.typlight == "Env":
+						LumiereEnvPreferences.draw(self, context)
+						
+					else:							
+						LumiereLampPreferences.draw(self, context)
+			
+			#---projector 
+				elif cobj.Lumiere.items_light_type == "Projector":
+					LumiereProjectorPreferences.draw(self, context)
 							
 """
 #########################################################################################################
@@ -6365,30 +7001,26 @@ class LumierePreferences(bpy.types.Panel):
 		row = layout.row(align=True)
 		objects_on_layer = []
 		objects_on_group = []
+		self.group = ""
 		pcoll = Lumiere_custom_icons["Lumiere"]
 
 #----------------------------------
-# ADD / REMOVE 
+# ADD LIGHTS
 #----------------------------------					   
-	#---Type Light / Shape
 		col = row.column(align=True)
 		row = col.row(align=True)
-		# if cobj is not None and cobj.type != 'EMPTY' and hasattr(cobj, "data") and not cobj.data.name.startswith("Lumiere"):
-			# op = row.operator("object.add_light", text="Create custom light", icon='BLANK1')
-			# op.act_light = cobj.name
-			# op.custom = True
-			# row = col.row(align=True)
-
+	
+	#---List of lights to import or create
 		row.prop(scene.Lumiere, "typlight", text="")
-		row.operator("object.create_light", text="New", icon='BLANK1')
 		
-	#---Import Light
-		# row.operator("object.dialog_operator", text="Import", icon='BLANK1')
+	#---Import or create depending on the choice in the list
+		if context.scene.Lumiere.typlight == "Import":
+			row.operator("object.import_light", text ='Import', icon='BLANK1')
+			row.operator("object.manage_light", text ='', icon='COLLAPSEMENU')
+		else:
+			row.operator("object.create_light", text="New", icon='BLANK1')
 
 		row = col.row(align=True)
-
-		
-
 #----------------------------------
 # EDIT MODE
 #----------------------------------			
@@ -6424,41 +7056,44 @@ class LumierePreferences(bpy.types.Panel):
 		for group in dct_group:
 			self.group = group
 			list_group = [item for it in dct_group[group] for item in it]
+			
 			row = layout.row(align=True)
 			box = row.box()
-			bsplit = box.split(.07, align=True)
-			col = bsplit.column()
+			col = box.column()
 			row = col.row(align=True)
-			row.scale_y = 0.7
-
-		#---Hide / Show group
-			op = row.operator("group.show_hide_group", text='', icon="RESTRICT_VIEW_OFF" if group.Lumiere.show_group else "RESTRICT_VIEW_ON", emboss=False)
-			op.group = group.name
-			row = col.row(align=True)
-			
+	
 		#---Expand group
 			row.prop(group.Lumiere, "expanded_group", icon="TRIA_DOWN" if group.Lumiere.expanded_group else "TRIA_RIGHT", icon_only=True, emboss=False)
 
+		#---Hide / Show group
+			op = row.operator("group.show_hide_group", text='', icon="OUTLINER_OB_LAMP" if group.Lumiere.show_group else "LAMP", emboss=False)
+			op.group = group.name
+
 		#---Group name
-			col = bsplit.column(align=True)
-			rsplit = col.split(align = True)
-			rsplit.prop(group, "name", text='')
+			row.prop(group, "name", text='')
 
-		#---Group Color
-			#rsplit.prop(group, "group_color")
+		#---Export light or group popup menu
+			op = row.operator("object.export_popup", text="", icon="EXPORT")
+			op.act_type = "Group"
+			op.act_name = group.name
 			
-		#---Group strength
-			row = col.row(align=True)
-			row.scale_y = .7
-			row.prop(group.Lumiere, "group_energy", text='', slider = True)
-
 		#---If the light is in this current group
-			for self.object in group.objects:	
-				if self.object in list(set(list_group)) and group.Lumiere.expanded_group:
-					self.box = box
-					box1 = self.box.box()
-					LumiereLightParameterPreferences.draw(self, context)
+			if group.Lumiere.expanded_group:
+				col = box.column(align=True)				
+				row = col.row(align=True)
+				row.scale_y = .15
+				row.operator("object.separator", text=" ", icon='BLANK1')
 
+				for self.object in group.objects:
+					if self.object in list(set(list_group)):
+						self.box = box
+						LumiereLightParameterPreferences.draw(self, context)
+						col = box.column(align=True)				
+						row = col.row(align=True)
+						row.scale_y = .15
+						row.alert = True
+						row.operator("object.separator", text=" ", icon='BLANK1')
+						row.alert = False
 		"""
 		#########################################################################################################
 		#########################################################################################################
@@ -6474,49 +7109,7 @@ class LumierePreferences(bpy.types.Panel):
 			box = col.box()		
 			self.box = box
 			LumiereLightParameterPreferences.draw(self, context)
-			
-		# col = layout.column()
-		# row = col.row()
-		# row.operator("object.group_add", text="NEW GROUP", icon='ZOOMIN')
-		
-	#---Export the light
-		# box = col.box()	
-		# col = box.column(align=True)				
-		# row = col.row(align=True)				
-		# op = row.operator("object.export_light", text ='Export', icon='BLANK1')
-		# op.act_light = cobj.name 
-		# row = col.row(align=True)				
-		# op = row.operator("object.import_light", text ='Import', icon='BLANK1')
-		# op.act_light = cobj.name 
-
-#########################################################################################################
-
-#########################################################################################################
-class Lumiere_popup(Operator):
-	bl_idname = "view3d.lumiere_popup"
-	bl_label = "Lumiere popup"
-
-	@classmethod
-	def poll(cls, context):
-		return (context.mode == 'OBJECT' and
-				context.object is not None and
-				context.objectdata.name.startswith("Lumiere") and
-				context.object.type == 'MESH')
-				
-	def invoke(self, context, event):
-		return context.window_manager.invoke_props_dialog(self)
-		
-	def execute(self, context):
-		return {'FINISHED'}
-   
-	def check(self, context):
-		return True
-
-	def draw(self, context):
-		scene = context.scene
-		cobj = context.active_object
-		layout = self.layout
-		row.prop(cobj, "name", text='')
+			cobj = self.cobj
 
 #########################################################################################################
 
@@ -6545,15 +7138,23 @@ def register():
 	bpy.types.Group.Lumiere = bpy.props.PointerProperty(type=LumiereGrp)
 	bpy.types.Scene.Lumiere = bpy.props.PointerProperty(type=LumiereScn)
 	bpy.types.Object.Lumiere = bpy.props.PointerProperty(type=LumiereObj)
+	bpy.types.Scene.Lumiere_groups_list = CollectionProperty(type=GroupProp)
+	bpy.types.Scene.Lumiere_groups_list_index = bpy.props.IntProperty()
+	bpy.types.Scene.Lumiere_all_lights_list = CollectionProperty(type=LightsProp)
+	bpy.types.Scene.Lumiere_all_lights_list_index = bpy.props.IntProperty()
 	update_panel(None, bpy.context)
 	
 def unregister():
 	for pcoll in Lumiere_custom_icons.values():
 		bpy.utils.previews.remove(pcoll)
 	Lumiere_custom_icons.clear()
-	bpy.utils.unregister_module(__name__)	
+	del bpy.types.Scene.Lumiere_groups_list
+	del bpy.types.Scene.Lumiere_groups_list_index
+	del bpy.types.Scene.Lumiere_all_lights_list
+	del bpy.types.Scene.Lumiere_all_lights_list_index
 	del bpy.types.Scene.Lumiere
 	del bpy.types.Object.Lumiere
+	bpy.utils.unregister_module(__name__)	
 	
 if __name__ == "__main__":
 	register()
