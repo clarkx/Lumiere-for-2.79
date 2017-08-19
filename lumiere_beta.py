@@ -24,7 +24,7 @@
 bl_info = {
     "name": "Lumiere",
     "author": "Cédric Brandin (Clarkx)",
-    "version": (0, 0, 8),
+    "version": (0, 0, 9),
     "blender": (2, 76, 3),
     "location": "View3D",
     "description": "Interactive Lighting Add-on",
@@ -5881,6 +5881,7 @@ class LumiereEnvPreferences(bpy.types.Panel):
     bl_category = "Lumiere"
     bl_label = "Lumiere"
     bl_context = "objectmode"
+    bl_description = "Environment map"
 
     @classmethod
     def poll(cls, context):
@@ -6087,6 +6088,7 @@ class LumiereLampForEnvPreferences(bpy.types.Panel):
     bl_category = "Lumiere"
     bl_label = "Lumiere"
     bl_context = "objectmode"
+    bl_description = "Sun for environment"
 
     @classmethod
     def poll(cls, context):
@@ -6155,6 +6157,7 @@ class LumiereProjectorPreferences(bpy.types.Panel):
     bl_category = "Lumiere"
     bl_label = "Lumiere"
     bl_context = "objectmode"
+    bl_description = "Projector"
 
     @classmethod
     def poll(cls, context):
@@ -6273,6 +6276,7 @@ class LumiereLampPreferences(bpy.types.Panel):
     bl_category = "Lumiere"
     bl_label = "Lumiere"
     bl_context = "objectmode"
+    bl_description = "Lamps"
 
     @classmethod
     def poll(cls, context):
@@ -6500,6 +6504,7 @@ class LumiereSoftboxPreferences(bpy.types.Panel):
     bl_category = "Lumiere"
     bl_label = "Lumiere"
     bl_context = "objectmode"
+    bl_description = "Softbox"
 
     @classmethod
     def poll(cls, context):
@@ -6822,6 +6827,7 @@ class LumiereLightParameterPreferences(bpy.types.Panel):
     bl_category = "Lumiere"
     bl_label = "Lumiere"
     bl_context = "objectmode"
+    bl_description = "Light parameter"
 
     @classmethod
     def poll(cls, context):
