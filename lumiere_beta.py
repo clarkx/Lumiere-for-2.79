@@ -6995,6 +6995,7 @@ class LumierePreferences(bpy.types.Panel):
     bl_category = "Lumiere"
     bl_label = "Lumiere"
     bl_context = "objectmode"
+    bl_description = "Preferences"
     
     @classmethod
     def poll(cls, context):
